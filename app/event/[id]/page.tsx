@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { use } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react'; // 👈 アイコンを追加！
+import Link from 'next/link'; // 👈 リンク遷移用にこれを追加！
+import { ChevronDown, ChevronRight, PlusCircle } from 'lucide-react'; // 👈 PlusCircleを追加！
 
 type Slot = { id: string; start_at: string; end_at: string };
 type Status = 'maru' | 'sankaku' | 'batsu';
@@ -31,7 +32,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [matrix, setMatrix] = useState<MatrixData[]>([]);
   const [sortType, setSortType] = useState('maru');
   const [hideBatsu, setHideBatsu] = useState(false);
-  const [isSummaryOpen, setIsSummaryOpen] = useState(true); // 👈 折りたたみ用のステートを追加！
+  const [isSummaryOpen, setIsSummaryOpen] = useState(true); 
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -211,7 +212,18 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   if (!event) return <div className="text-center mt-20 text-red-500 font-bold">イベントが見つかりません</div>;
 
   return (
-    <div className="max-w-2xl mx-auto p-4 mt-6 space-y-6">
+    <div className="max-w-2xl mx-auto p-4 mt-4 space-y-6">
+      {/* 💡 ヘッダー部分に「新しく作る」ボタンを追加！ */}
+      <div className="flex justify-end mb-2">
+        <Link 
+          href="/" 
+          className="flex items-center gap-1 text-sm bg-blue-50 text-blue-600 px-3 py-2 rounded-lg font-bold hover:bg-blue-100 transition-colors border border-blue-200 shadow-sm"
+        >
+          <PlusCircle size={16} />
+          自分も新しくイベントを作る
+        </Link>
+      </div>
+
       <div className="text-center mb-6">
         <h1 className="text-3xl font-bold mb-2 text-gray-800">{event.title}</h1>
         {event.description && <p className="text-gray-600 whitespace-pre-wrap">{event.description}</p>}
@@ -272,7 +284,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       {activeTab === 'result' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow p-6 border-t-4 border-green-500 transition-all">
-            {/* 💡 アコーディオン化されたヘッダー */}
             <button 
               onClick={() => setIsSummaryOpen(!isSummaryOpen)}
               className="w-full flex items-center justify-between focus:outline-none"
@@ -283,7 +294,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               </div>
             </button>
 
-            {/* 💡 開いている時だけ表示される中身 */}
             {isSummaryOpen && (
               <div className="mt-6">
                 <div className="flex flex-col sm:flex-row gap-4 mb-6 p-4 bg-gray-50 rounded-lg border">
