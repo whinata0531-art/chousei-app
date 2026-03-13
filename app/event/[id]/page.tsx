@@ -364,7 +364,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         <div className="bg-white rounded-xl shadow p-6 border-t-4 border-blue-500 relative">
           <div className="mb-4">
             <label className="block text-sm font-bold mb-1">お名前 *</label>
-            <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} onBlur={handleNameBlur}
+            <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)}
               className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力" />
           </div>
 
@@ -548,7 +548,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           )}
         </div>
       )}
-
     </div>
   );
 }

@@ -279,7 +279,6 @@ export default function TopPage() {
                         {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
                       </h3>
                     )}
-                    {/* 💡 ボタンっぽくしてタップできるのをアピール！ */}
                     <Link href={`/event/${schedule.event_id}`} className="block bg-white border-2 border-yellow-300 p-4 rounded-xl hover:bg-yellow-50 active:bg-yellow-100 transition shadow-sm group">
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
