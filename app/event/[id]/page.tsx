@@ -275,9 +275,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       alert('回答を保存しました！🎉\nみんなの回答タブも更新されたよ！');
       await fetchStats(slots);
-      
       await fetchMySchedules(deviceGuestId);
-      
       setActiveTab('result');
     }
     setLoading(false);
@@ -362,7 +360,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </button>
       </div>
 
-      {/* --- 回答タブ --- */}
       {activeTab === 'response' && (
         <div className="bg-white rounded-xl shadow p-6 border-t-4 border-blue-500 relative">
           <div className="mb-4">
@@ -405,7 +402,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
-      {/* --- 集計タブ --- */}
       {activeTab === 'result' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow p-6 border-t-4 border-green-500 transition-all">
@@ -504,7 +500,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
-      {/* 💡 マイ予定タブ --- */}
       {activeTab === 'my-schedule' && (
         <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
           <div className="flex items-center gap-2 mb-6 text-yellow-600">
@@ -530,7 +525,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                         {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
                       </h3>
                     )}
-                    {/* 💡 ボタンっぽくしてタップできるのをアピール！ */}
                     <Link href={`/event/${schedule.event_id}`} className="block bg-white border-2 border-yellow-300 p-4 rounded-xl hover:bg-yellow-50 active:bg-yellow-100 transition shadow-sm group">
                       <div className="flex justify-between items-center mb-2">
                         <div className="flex items-center gap-2">
