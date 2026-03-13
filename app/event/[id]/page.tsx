@@ -22,6 +22,14 @@ const getFixedDate = (dbDateStr: string) => {
   return new Date(dbDateStr.substring(0, 16));
 };
 
+// 💡 「終日」かどうかを判定して文字を返す便利関数
+const formatSlotTime = (startStr: string, endStr: string) => {
+  const sTime = format(getFixedDate(startStr), 'HH:mm');
+  const eTime = format(getFixedDate(endStr), 'HH:mm');
+  if (sTime === '00:00' && eTime === '23:59') return '終日';
+  return `${sTime} 〜 ${eTime}`;
+};
+
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
   const [activeTab, setActiveTab] = useState<'response' | 'result' | 'my-schedule'>('response');
@@ -61,7 +69,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       
       if (eData) {
         setEvent(eData);
-        // 💡 クラウドに「このイベント見たよ！」を記録
         await supabase.from('user_recent_events').upsert({
           guest_id: currentGuestId,
           event_id: eventId,
@@ -97,7 +104,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           setAnswers(loadedAnswers);
         }
 
-        // 💡 クラウドの「最強コピー記憶」を取得
         const { data: copies } = await supabase.from('user_smart_copies').select('*').eq('guest_id', currentGuestId);
         if (copies) {
           const parsed: Record<string, PastAvailability> = {};
@@ -107,7 +113,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           setPastAvailabilities(parsed);
         }
 
-        // 💡 仮確定された日程があったら、クラウドの記憶に強制的に「バツ」を書き込む
         const confirmedSlots = sData.filter(s => s.is_confirmed);
         if (confirmedSlots.length > 0 && existingResponse) {
           const copyUpserts: any[] = [];
@@ -274,7 +279,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       const avails = Object.entries(answers).map(([slotId, status]) => ({ response_id: resData.id, slot_id: slotId, status }));
       await supabase.from('availabilities').insert(avails);
 
-      // 💡 最強コピーの記憶をクラウド（Supabase）に保存！
       const now = Date.now();
       const copyUpserts = slots.map(slot => ({
         guest_id: deviceGuestId,
@@ -350,7 +354,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           <div className="bg-white rounded-lg p-3 inline-block shadow-sm">
             {confirmedSlots.map(s => (
               <div key={s.id} className="text-lg font-bold text-gray-800">
-                {format(getFixedDate(s.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(s.end_at), 'HH:mm')}
+                {format(getFixedDate(s.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(s.start_at, s.end_at)}
               </div>
             ))}
           </div>
@@ -395,7 +399,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               <div key={slot.id} className={`p-3 border rounded-lg hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${slot.is_confirmed ? 'bg-yellow-50 border-yellow-300' : ''}`}>
                 <div className="text-sm font-bold text-gray-700 flex items-center gap-2">
                   {slot.is_confirmed && <span className="bg-yellow-400 text-xs px-2 py-1 rounded font-bold">仮確定</span>}
-                  {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
+                  {format(getFixedDate(slot.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(slot.start_at, slot.end_at)}
                 </div>
                 <div className="flex bg-gray-100 p-1 rounded-lg sm:w-64 shrink-0 gap-1">
                   <button onClick={() => setAnswers({ ...answers, [slot.id]: 'maru' })}
@@ -452,7 +456,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                         <div>
                           {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded-full mb-2 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
                           <div className="font-bold text-lg">
-                            {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
+                            {format(getFixedDate(slot.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(slot.start_at, slot.end_at)}
                           </div>
                         </div>
                         <div className="flex gap-4 text-center">
@@ -491,7 +495,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => (
                         <th key={slot.id} className={`p-3 border-b-2 text-xs font-medium ${slot.is_confirmed ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-50 text-gray-600'}`}>
                           {slot.is_confirmed && '📌'}<br/>
-                          {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>{format(getFixedDate(slot.start_at), 'HH:mm')}
+                          {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>
+                          {formatSlotTime(slot.start_at, slot.end_at)}
                         </th>
                       ))}
                     </tr>
@@ -543,7 +548,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                           <div className="flex items-center gap-2">
                             <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
                             <span className="font-extrabold text-lg text-gray-800">
-                              {format(getFixedDate(schedule.start_at), 'HH:mm')} 〜 {format(getFixedDate(schedule.end_at), 'HH:mm')}
+                              {formatSlotTime(schedule.start_at, schedule.end_at)}
                             </span>
                           </div>
                         </div>

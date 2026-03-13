@@ -35,6 +35,7 @@ export default function TopPage() {
   const [bulkStart, setBulkStart] = useState('12:00');
   const [bulkEnd, setBulkEnd] = useState('18:00');
   const [bulkInterval, setBulkInterval] = useState('120');
+  const [bulkIsAllDay, setBulkIsAllDay] = useState(false); // 💡 一括作成の終日フラグ
 
   const [deviceGuestId, setDeviceGuestId] = useState('');
   const [transferIdInput, setTransferIdInput] = useState('');
@@ -56,7 +57,6 @@ export default function TopPage() {
       }
       setDeviceGuestId(currentGuestId);
       
-      // 💡 マイ予定とクラウド履歴の取得を同時実行！
       fetchMySchedules(currentGuestId);
       fetchRecentEvents(currentGuestId);
     }
@@ -112,7 +112,9 @@ export default function TopPage() {
   const toggleDow = (val: number) => { setSelectedDows(prev => prev.includes(val) ? prev.filter(d => d !== val) : [...prev, val]); };
 
   const generateBulkSlots = () => {
-    if (!bulkStartDate || !bulkEndDate || selectedDows.length === 0 || !bulkStart || !bulkEnd) return alert('期間、曜日、時間をすべて指定してね！');
+    if (!bulkStartDate || !bulkEndDate || selectedDows.length === 0) return alert('期間と曜日を指定してね！');
+    if (!bulkIsAllDay && (!bulkStart || !bulkEnd)) return alert('時間を指定するか、終日にチェックを入れてね！');
+    
     const start = new Date(bulkStartDate);
     const end = new Date(bulkEndDate);
     if (start > end) return alert('終了日は開始日より後に設定してね！');
@@ -124,15 +126,20 @@ export default function TopPage() {
     while (currentDate <= end) {
       if (selectedDows.includes(currentDate.getDay())) {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
-        const dayStart = new Date(`${dateStr}T${bulkStart}`);
-        const dayEnd = new Date(`${dateStr}T${bulkEnd}`);
-
-        let currentSlot = dayStart;
-        while (currentSlot < dayEnd) {
-          const nextSlot = addMinutes(currentSlot, interval);
-          if (nextSlot > dayEnd) break;
-          newSlots.push({ startAt: format(currentSlot, "yyyy-MM-dd'T'HH:mm"), endAt: format(nextSlot, "yyyy-MM-dd'T'HH:mm") });
-          currentSlot = nextSlot;
+        
+        // 💡 終日の場合は 00:00〜23:59 で作成
+        if (bulkIsAllDay) {
+          newSlots.push({ startAt: `${dateStr}T00:00`, endAt: `${dateStr}T23:59` });
+        } else {
+          const dayStart = new Date(`${dateStr}T${bulkStart}`);
+          const dayEnd = new Date(`${dateStr}T${bulkEnd}`);
+          let currentSlot = dayStart;
+          while (currentSlot < dayEnd) {
+            const nextSlot = addMinutes(currentSlot, interval);
+            if (nextSlot > dayEnd) break;
+            newSlots.push({ startAt: format(currentSlot, "yyyy-MM-dd'T'HH:mm"), endAt: format(nextSlot, "yyyy-MM-dd'T'HH:mm") });
+            currentSlot = nextSlot;
+          }
         }
       }
       currentDate = addDays(currentDate, 1);
@@ -160,7 +167,6 @@ export default function TopPage() {
     localStorage.setItem('hostEventHistory', JSON.stringify(updatedHistory));
     setHostHistory(updatedHistory);
 
-    // 💡 自分が作ったイベントもクラウドの履歴に保存
     await supabase.from('user_recent_events').upsert({
       guest_id: deviceGuestId,
       event_id: eventData.id,
@@ -250,18 +256,27 @@ export default function TopPage() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-2">
-                <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="p-2 border rounded text-sm flex-1" />
-                <span className="text-gray-500">〜</span>
-                <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="p-2 border rounded text-sm flex-1" />
-                <select value={bulkInterval} onChange={e => setBulkInterval(e.target.value)} className="p-2 border rounded text-sm flex-1">
-                  <option value="60">60分枠</option>
-                  <option value="90">90分枠</option>
-                  <option value="120">2時間枠</option>
-                  <option value="180">3時間枠</option>
-                </select>
+              
+              {/* 💡 一括作成にも終日設定を追加 */}
+              <div className="flex items-center gap-2 mb-2">
+                <input type="checkbox" id="bulkAllDay" checked={bulkIsAllDay} onChange={e => setBulkIsAllDay(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                <label htmlFor="bulkAllDay" className="text-sm font-bold text-gray-700 cursor-pointer">時間を指定せず「終日」にする</label>
               </div>
-              <button onClick={generateBulkSlots} className="w-full py-2 bg-blue-600 text-white font-bold rounded">枠を追加する</button>
+
+              {!bulkIsAllDay && (
+                <div className="flex items-center gap-2 bg-white p-2 rounded border">
+                  <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="p-1 border-b text-sm flex-1" />
+                  <span className="text-gray-500">〜</span>
+                  <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="p-1 border-b text-sm flex-1" />
+                  <select value={bulkInterval} onChange={e => setBulkInterval(e.target.value)} className="p-1 border-l pl-2 text-sm flex-1 text-gray-600">
+                    <option value="60">60分枠</option>
+                    <option value="90">90分枠</option>
+                    <option value="120">2時間枠</option>
+                    <option value="180">3時間枠</option>
+                  </select>
+                </div>
+              )}
+              <button onClick={generateBulkSlots} className="w-full py-2 bg-blue-600 text-white font-bold rounded shadow-sm hover:bg-blue-700 transition">枠を追加する</button>
             </div>
 
             <div>
@@ -277,22 +292,58 @@ export default function TopPage() {
                   </div>
                 )}
               </div>
-              {slots.map((slot, index) => (
-                <div key={index} className="flex items-center gap-2 mb-2">
-                  <input type="datetime-local" value={slot.startAt} onChange={e => {
-                    const newSlots = [...slots]; newSlots[index].startAt = e.target.value; setSlots(newSlots);
-                  }} className="p-2 border rounded text-sm flex-1" />
-                  <span>〜</span>
-                  <input type="datetime-local" value={slot.endAt} onChange={e => {
-                    const newSlots = [...slots]; newSlots[index].endAt = e.target.value; setSlots(newSlots);
-                  }} className="p-2 border rounded text-sm flex-1" />
-                  <button onClick={() => removeSlot(index)} className="p-2 text-red-500 rounded"><Trash2 size={20} /></button>
-                </div>
-              ))}
-              <button onClick={addSlot} className="flex items-center gap-1 text-sm text-gray-500 mt-2 border px-3 py-1 rounded"><Plus size={16} /> 空の枠を追加</button>
+              
+              {/* 💡 終日チェックボックス付きの新しいスロットUI */}
+              <div className="space-y-3">
+                {slots.map((slot, index) => {
+                  const date = slot.startAt && slot.startAt.includes('T') ? slot.startAt.split('T')[0] : '';
+                  const startTime = slot.startAt && slot.startAt.includes('T') ? slot.startAt.split('T')[1].substring(0, 5) : '12:00';
+                  const endTime = slot.endAt && slot.endAt.includes('T') ? slot.endAt.split('T')[1].substring(0, 5) : '18:00';
+                  const isAllDay = startTime === '00:00' && endTime === '23:59';
+
+                  const updateSlot = (field: string, value: any) => {
+                    const newSlots = [...slots];
+                    let d = date; let s = startTime; let e = endTime; let allDay = isAllDay;
+                    if (field === 'date') d = value;
+                    if (field === 'startTime') s = value;
+                    if (field === 'endTime') e = value;
+                    if (field === 'isAllDay') allDay = value;
+                    if (!d) d = format(new Date(), 'yyyy-MM-dd'); // 日付が空なら今日をセット
+
+                    if (allDay) {
+                      newSlots[index] = { startAt: `${d}T00:00`, endAt: `${d}T23:59` };
+                    } else {
+                      if (s === '00:00' && e === '23:59') { s = '12:00'; e = '18:00'; }
+                      newSlots[index] = { startAt: `${d}T${s}`, endAt: `${d}T${e}` };
+                    }
+                    setSlots(newSlots);
+                  };
+
+                  return (
+                    <div key={index} className="flex flex-col gap-2 bg-gray-50 p-3 rounded-xl border border-gray-200 relative">
+                      <button onClick={() => removeSlot(index)} className="absolute top-3 right-3 text-red-400 hover:text-red-600 transition"><Trash2 size={18} /></button>
+                      <div className="flex items-center gap-3 pr-8">
+                        <input type="date" value={date} onChange={e => updateSlot('date', e.target.value)} className="p-2 border rounded-lg text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none" />
+                        <label className="flex items-center gap-1 text-sm font-bold text-gray-600 cursor-pointer bg-white px-2 py-1 rounded border">
+                          <input type="checkbox" checked={isAllDay} onChange={e => updateSlot('isAllDay', e.target.checked)} className="w-4 h-4" />
+                          終日
+                        </label>
+                      </div>
+                      {!isAllDay && (
+                        <div className="flex items-center gap-2">
+                          <input type="time" value={startTime} onChange={e => updateSlot('startTime', e.target.value)} className="p-2 border rounded-lg text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none" />
+                          <span className="text-gray-400">〜</span>
+                          <input type="time" value={endTime} onChange={e => updateSlot('endTime', e.target.value)} className="p-2 border rounded-lg text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={addSlot} className="flex items-center justify-center w-full gap-1 text-sm text-gray-500 mt-3 border-2 border-dashed border-gray-300 py-3 rounded-xl hover:bg-gray-50 transition"><Plus size={16} /> 新しい枠を追加</button>
             </div>
 
-            <button onClick={handleCreate} disabled={loading} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg mt-6 shadow">
+            <button onClick={handleCreate} disabled={loading} className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-xl mt-6 shadow-md transition">
               {loading ? '作成中...' : 'イベントを作成する'}
             </button>
           </div>
@@ -317,6 +368,11 @@ export default function TopPage() {
               <div className="space-y-4">
                 {mySchedules.map((schedule, i) => {
                   const isFirstOfDay = i === 0 || format(getFixedDate(mySchedules[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
+                  // 💡 終日判定
+                  const sTime = format(getFixedDate(schedule.start_at), 'HH:mm');
+                  const eTime = format(getFixedDate(schedule.end_at), 'HH:mm');
+                  const isAllDay = sTime === '00:00' && eTime === '23:59';
+
                   return (
                     <div key={schedule.id}>
                       {isFirstOfDay && (
@@ -329,7 +385,7 @@ export default function TopPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
                             <span className="font-extrabold text-lg text-gray-800">
-                              {format(getFixedDate(schedule.start_at), 'HH:mm')} 〜 {format(getFixedDate(schedule.end_at), 'HH:mm')}
+                              {isAllDay ? '終日' : `${sTime} 〜 ${eTime}`}
                             </span>
                           </div>
                         </div>
