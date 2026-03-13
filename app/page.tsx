@@ -9,6 +9,7 @@ import Link from 'next/link';
 
 type HistoryItem = { title: string; slots: { startAt: string; endAt: string }[] };
 type ConfirmedSchedule = { id: string; event_id: string; start_at: string; end_at: string; eventTitle: string };
+type RecentEvent = { id: string; title: string; lastAccessed: number };
 
 const getFixedDate = (dbDateStr: string) => {
   return new Date(dbDateStr.substring(0, 16));
@@ -26,6 +27,7 @@ export default function TopPage() {
 
   const [mySchedules, setMySchedules] = useState<ConfirmedSchedule[]>([]);
   const [fetchingSchedules, setFetchingSchedules] = useState(false);
+  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]); // 💡 最近見たイベントの履歴
 
   const [bulkStartDate, setBulkStartDate] = useState('');
   const [bulkEndDate, setBulkEndDate] = useState('');
@@ -43,6 +45,9 @@ export default function TopPage() {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('hostEventHistory');
       if (saved) setHostHistory(JSON.parse(saved));
+      
+      const savedRecent = localStorage.getItem('recentEvents');
+      if (savedRecent) setRecentEvents(JSON.parse(savedRecent));
       
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
@@ -139,6 +144,13 @@ export default function TopPage() {
     const updatedHistory = [{ title, slots }, ...hostHistory.filter(h => h.title !== title)].slice(0, 5);
     localStorage.setItem('hostEventHistory', JSON.stringify(updatedHistory));
     setHostHistory(updatedHistory);
+
+    // 💡 自分が作ったイベントも「最近見たイベント」に追加する！
+    const newRecent = { id: eventData.id, title, lastAccessed: Date.now() };
+    const updatedRecent = [newRecent, ...recentEvents.filter(r => r.id !== eventData.id)].slice(0, 10);
+    localStorage.setItem('recentEvents', JSON.stringify(updatedRecent));
+    setRecentEvents(updatedRecent);
+
     setCreatedEventId(eventData.id);
     setLoading(false);
   };
@@ -255,51 +267,77 @@ export default function TopPage() {
       )}
 
       {activeTab === 'my-schedule' && (
-        <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
-          <div className="flex items-center gap-2 mb-6 text-yellow-600">
-            <CalendarCheck size={24} />
-            <h2 className="text-xl font-bold">あなたが参加する確定予定</h2>
+        <div className="space-y-6">
+          {/* --- 確定予定エリア --- */}
+          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
+            <div className="flex items-center gap-2 mb-6 text-yellow-600">
+              <CalendarCheck size={24} />
+              <h2 className="text-xl font-bold">あなたが参加する確定予定</h2>
+            </div>
+            
+            {fetchingSchedules ? (
+              <p className="text-center text-gray-500 py-10">読み込み中...</p>
+            ) : mySchedules.length === 0 ? (
+              <div className="text-center py-6 bg-gray-50 rounded-lg">
+                <p className="text-gray-500 font-bold">まだ確定した予定はありません。</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {mySchedules.map((schedule, i) => {
+                  const isFirstOfDay = i === 0 || format(getFixedDate(mySchedules[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
+                  return (
+                    <div key={schedule.id}>
+                      {isFirstOfDay && (
+                        <h3 className="text-sm font-bold text-gray-500 mb-2 mt-4 border-b pb-1">
+                          {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
+                        </h3>
+                      )}
+                      <Link href={`/event/${schedule.event_id}`} className="block bg-white border-2 border-yellow-300 p-4 rounded-xl hover:bg-yellow-50 active:bg-yellow-100 transition shadow-sm group">
+                        <div className="flex justify-between items-center mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
+                            <span className="font-extrabold text-lg text-gray-800">
+                              {format(getFixedDate(schedule.start_at), 'HH:mm')} 〜 {format(getFixedDate(schedule.end_at), 'HH:mm')}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <p className="text-sm text-gray-700 font-bold truncate pr-4">{schedule.eventTitle}</p>
+                          <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
+                            調整画面へ <ChevronRight size={14} />
+                          </div>
+                        </div>
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          
-          {fetchingSchedules ? (
-            <p className="text-center text-gray-500 py-10">読み込み中...</p>
-          ) : mySchedules.length === 0 ? (
-            <div className="text-center py-10 bg-gray-50 rounded-lg">
-              <p className="text-gray-500 font-bold mb-2">まだ確定した予定はありません。</p>
-              <p className="text-sm text-gray-400">イベントページで仮確定された日程がここに並びます。</p>
+
+          {/* 💡 --- 最近見た・調整中のイベントエリア --- */}
+          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-400">
+            <div className="flex items-center gap-2 mb-6 text-blue-600">
+              <History size={24} />
+              <h2 className="text-xl font-bold">最近見た・調整中のイベント</h2>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {mySchedules.map((schedule, i) => {
-                const isFirstOfDay = i === 0 || format(getFixedDate(mySchedules[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
-                return (
-                  <div key={schedule.id}>
-                    {isFirstOfDay && (
-                      <h3 className="text-sm font-bold text-gray-500 mb-2 mt-4 border-b pb-1">
-                        {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
-                      </h3>
-                    )}
-                    <Link href={`/event/${schedule.event_id}`} className="block bg-white border-2 border-yellow-300 p-4 rounded-xl hover:bg-yellow-50 active:bg-yellow-100 transition shadow-sm group">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
-                          <span className="font-extrabold text-lg text-gray-800">
-                            {format(getFixedDate(schedule.start_at), 'HH:mm')} 〜 {format(getFixedDate(schedule.end_at), 'HH:mm')}
-                          </span>
-                        </div>
+            {recentEvents.length === 0 ? (
+              <p className="text-center text-gray-500 py-6 bg-gray-50 rounded-lg font-bold">まだ履歴がありません。</p>
+            ) : (
+              <div className="space-y-3">
+                {recentEvents.map(re => (
+                  <Link key={re.id} href={`/event/${re.id}`} className="block bg-white border border-gray-200 p-4 rounded-xl hover:bg-blue-50 transition shadow-sm group">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-gray-800">{re.title}</span>
+                      <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
+                        開く <ChevronRight size={14} />
                       </div>
-                      <div className="flex justify-between items-center">
-                        <p className="text-sm text-gray-700 font-bold truncate pr-4">{schedule.eventTitle}</p>
-                        <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
-                          調整画面へ <ChevronRight size={14} />
-                        </div>
-                      </div>
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
