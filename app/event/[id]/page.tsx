@@ -13,9 +13,8 @@ type Status = 'maru' | 'sankaku' | 'batsu';
 type PastAvailability = { status: Status; updated: number };
 
 type AggregatedSlot = Slot & { maru: number; sankaku: number; batsu: number; total: number; originalIndex: number; };
-type MatrixData = { guestName: string; answers: Record<string, string>; };
+type MatrixData = { guestId: string; guestName: string; answers: Record<string, string>; };
 
-// 💡 時差バグ修正！タイムゾーン情報を切り捨てて、ホストが入力した「文字盤の数字」のままの時間を生成する関数
 const getFixedDate = (dbDateStr: string) => {
   return new Date(dbDateStr.substring(0, 16));
 };
@@ -27,12 +26,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 回答用ステート
+  // 💡 スマホを識別するデバイスID
+  const [deviceGuestId, setDeviceGuestId] = useState('');
+  
   const [guestName, setGuestName] = useState('');
   const [answers, setAnswers] = useState<Record<string, Status>>({});
   const [pastAvailabilities, setPastAvailabilities] = useState<Record<string, PastAvailability>>({});
 
-  // 集計用ステート
   const [aggregated, setAggregated] = useState<AggregatedSlot[]>([]);
   const [matrix, setMatrix] = useState<MatrixData[]>([]);
   const [sortType, setSortType] = useState('maru');
@@ -41,22 +41,62 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
   useEffect(() => {
     const fetchAll = async () => {
+      // 1. デバイスIDの取得・生成
+      let currentGuestId = localStorage.getItem('deviceGuestId');
+      if (!currentGuestId) {
+        currentGuestId = crypto.randomUUID();
+        localStorage.setItem('deviceGuestId', currentGuestId);
+      }
+      setDeviceGuestId(currentGuestId);
+
+      // 2. イベント情報の取得
       const { data: eData } = await supabase.from('events').select('*').eq('id', eventId).single();
       const { data: sData } = await supabase.from('slots').select('*').eq('event_id', eventId).order('start_at');
       
       if (eData) setEvent(eData);
+      
       if (sData) {
         setSlots(sData);
         const initialAnswers: Record<string, Status> = {};
         sData.forEach(s => initialAnswers[s.id] = 'maru'); 
 
-        // 💡 過去の名前があれば、画面を開いた瞬間に自動で入力＆履歴をロードする！
-        const savedName = localStorage.getItem('lastGuestName');
-        if (savedName) {
-          setGuestName(savedName);
-          await loadUserData(savedName, initialAnswers, sData);
+        // 💡 ページを開いた瞬間に、デバイスIDを使ってデータベースから既存回答を探す！
+        const { data: existingResponse } = await supabase
+          .from('responses')
+          .select('id, guest_name')
+          .eq('event_id', eventId)
+          .eq('guest_id', currentGuestId)
+          .single();
+
+        if (existingResponse) {
+          // 既に回答済みなら、名前と ◯△✕ の状態を完全に復元する
+          setGuestName(existingResponse.guest_name);
+          const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', existingResponse.id);
+          if (aData) {
+            const loadedAnswers = { ...initialAnswers };
+            aData.forEach(a => loadedAnswers[a.slot_id] = a.status as Status);
+            setAnswers(loadedAnswers);
+          }
         } else {
+          // 初めての回答なら、前回の名前だけ自動入力
+          const savedName = localStorage.getItem('lastGuestName');
+          if (savedName) setGuestName(savedName);
           setAnswers(initialAnswers);
+        }
+      }
+
+      // 3. グローバルな過去予定の読み込み（スマートコピー用）
+      const globalDataStr = localStorage.getItem('globalAvailabilities');
+      if (globalDataStr) {
+        const globalData = JSON.parse(globalDataStr);
+        // 今回はデバイスID単位で予定を管理する
+        if (globalData[currentGuestId]) {
+          const parsed: Record<string, PastAvailability> = {};
+          Object.entries(globalData[currentGuestId]).forEach(([k, v]) => {
+            if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
+            else parsed[k] = v as PastAvailability;
+          });
+          setPastAvailabilities(parsed);
         }
       }
 
@@ -89,41 +129,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       const userAvails = avails?.filter(a => a.response_id === res.id) || [];
       const userAnswers: Record<string, string> = {};
       userAvails.forEach(a => userAnswers[a.slot_id] = a.status);
-      return { guestName: res.guest_name, answers: userAnswers };
+      return { guestId: res.guest_id, guestName: res.guest_name, answers: userAnswers };
     });
     setMatrix(matrixData);
-  };
-
-  // 指定した名前の人のデータを読み込む関数
-  const loadUserData = async (name: string, defaultAnswers: Record<string, Status>, currentSlots: Slot[]) => {
-    const { data } = await supabase.from('responses').select('id').eq('event_id', eventId).eq('guest_name', name).single();
-    let loadedAnswers = { ...defaultAnswers };
-
-    if (data) {
-      const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', data.id);
-      if (aData) {
-        aData.forEach(a => loadedAnswers[a.slot_id] = a.status as Status);
-      }
-    }
-    setAnswers(loadedAnswers);
-
-    const globalDataStr = localStorage.getItem('globalAvailabilities');
-    if (globalDataStr) {
-      const globalData = JSON.parse(globalDataStr);
-      if (globalData[name]) {
-        const parsed: Record<string, PastAvailability> = {};
-        Object.entries(globalData[name]).forEach(([k, v]) => {
-          if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
-          else parsed[k] = v as PastAvailability;
-        });
-        setPastAvailabilities(parsed);
-      }
-    }
-  };
-
-  const handleNameBlur = async () => {
-    if (!guestName) return;
-    await loadUserData(guestName, answers, slots);
   };
 
   const applySmartCopy = () => {
@@ -131,7 +139,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     let appliedCount = 0;
 
     slots.forEach(slot => {
-      // 💡 時差修正版の時間を取得
       const sStart = getFixedDate(slot.start_at).getTime();
       const sEnd = getFixedDate(slot.end_at).getTime();
 
@@ -181,8 +188,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     if (!guestName) return alert('名前を入力してね！');
     setLoading(true);
 
+    // 💡 名前ではなく、イベントID×デバイスID で上書きするかどうかを判定する
     const { data: resData } = await supabase
-      .from('responses').upsert({ event_id: eventId, guest_name: guestName, updated_at: new Date().toISOString() }, { onConflict: 'event_id,guest_name' })
+      .from('responses')
+      .upsert(
+        { event_id: eventId, guest_id: deviceGuestId, guest_name: guestName, updated_at: new Date().toISOString() }, 
+        { onConflict: 'event_id,guest_id' }
+      )
       .select('id').single();
 
     if (resData) {
@@ -192,13 +204,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       const globalDataStr = localStorage.getItem('globalAvailabilities');
       const globalData = globalDataStr ? JSON.parse(globalDataStr) : {};
-      const myTimes = globalData[guestName] || {};
+      const myTimes = globalData[deviceGuestId] || {};
       const now = Date.now();
       slots.forEach(slot => myTimes[`${slot.start_at}_${slot.end_at}`] = { status: answers[slot.id], updated: now });
-      globalData[guestName] = myTimes;
+      globalData[deviceGuestId] = myTimes;
       localStorage.setItem('globalAvailabilities', JSON.stringify(globalData));
-
-      // 💡 次回から自動入力されるように名前を保存！
       localStorage.setItem('lastGuestName', guestName);
 
       alert('回答を保存しました！🎉\nみんなの回答タブも更新されたよ！');
@@ -212,7 +222,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     let result = [...aggregated];
     if (hideBatsu) result = result.filter(s => s.batsu === 0);
     result.sort((a, b) => {
-      // 💡 時差修正版のDateを使って並び替え
       if (sortType === 'maru') {
         if (b.maru !== a.maru) return b.maru - a.maru;
         if (b.sankaku !== a.sankaku) return b.sankaku - a.sankaku;
@@ -264,15 +273,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         <div className="bg-white rounded-xl shadow p-6 border-t-4 border-blue-500">
           <div className="mb-4">
             <label className="block text-sm font-bold mb-1">お名前 *</label>
-            <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} onBlur={handleNameBlur}
-              className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力（自動で保存されます）" />
+            <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)}
+              className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力" />
           </div>
 
           {Object.keys(pastAvailabilities).length > 0 && (
             <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-100">
-              <p className="text-sm text-purple-800 font-bold mb-2">💡 前回の名前を自動入力しました！</p>
+              <p className="text-sm text-purple-800 font-bold mb-2">💡 最新の予定から推測できます</p>
               <button onClick={applySmartCopy} className="w-full py-2 bg-purple-600 text-white text-sm font-bold rounded shadow hover:bg-purple-700 transition">
-                最新の予定から推測して一括入力（最強コピー）
+                スマートコピーで一括入力
               </button>
             </div>
           )}
@@ -281,7 +290,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             {slots.map(slot => (
               <div key={slot.id} className="p-3 border rounded-lg hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-sm font-bold text-gray-700">
-                  {/* 💡 ここでも getFixedDate を使う */}
                   {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
                 </div>
                 <div className="flex bg-gray-100 p-1 rounded-lg sm:w-64 shrink-0 gap-1">
@@ -338,7 +346,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <div>
                         {i === 0 && sortType === 'maru' && <span className="inline-block px-2 py-1 bg-yellow-400 text-xs font-bold rounded mb-2">🏆 最有力候補</span>}
                         <div className="font-bold text-lg">
-                          {/* 💡 ここでも getFixedDate を使う */}
                           {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
                         </div>
                       </div>
@@ -367,7 +374,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <th className="p-3 border-b-2 bg-gray-50 font-bold text-gray-700 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">名前</th>
                       {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => (
                         <th key={slot.id} className="p-3 border-b-2 bg-gray-50 text-xs font-medium text-gray-600">
-                          {/* 💡 ここでも getFixedDate を使う */}
                           {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>{format(getFixedDate(slot.start_at), 'HH:mm')}
                         </th>
                       ))}
@@ -376,6 +382,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   <tbody>
                     {matrix.map((row, i) => (
                       <tr key={i} className="hover:bg-gray-50">
+                        {/* 💡 同姓同名でもちゃんと別々の行として表示されるよ！ */}
                         <td className="p-3 border-b font-medium sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.guestName}</td>
                         {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => (
                           <td key={slot.id} className="p-3 border-b text-center text-xl">{getStatusIcon(row.answers[slot.id])}</td>
