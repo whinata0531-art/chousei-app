@@ -60,7 +60,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         const initialAnswers: Record<string, Status> = {};
         sData.forEach(s => initialAnswers[s.id] = 'maru'); 
 
-        // 💡 ページを開いた瞬間に、デバイスIDを使ってデータベースから既存回答を探す！
         const { data: existingResponse } = await supabase
           .from('responses')
           .select('id, guest_name')
@@ -69,7 +68,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           .single();
 
         if (existingResponse) {
-          // 既に回答済みなら、名前と ◯△✕ の状態を完全に復元する
           setGuestName(existingResponse.guest_name);
           const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', existingResponse.id);
           if (aData) {
@@ -78,26 +76,37 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             setAnswers(loadedAnswers);
           }
         } else {
-          // 初めての回答なら、前回の名前だけ自動入力
           const savedName = localStorage.getItem('lastGuestName');
           if (savedName) setGuestName(savedName);
           setAnswers(initialAnswers);
         }
       }
 
-      // 3. グローバルな過去予定の読み込み（スマートコピー用）
+      // 3. グローバルな過去予定の読み込み（最強コピー復活！）
       const globalDataStr = localStorage.getItem('globalAvailabilities');
       if (globalDataStr) {
         const globalData = JSON.parse(globalDataStr);
-        // 今回はデバイスID単位で予定を管理する
+        const parsed: Record<string, PastAvailability> = {};
+
+        // 💡 救済措置：古い「名前」で保存されていたデータを全部引き継ぐ！
+        Object.keys(globalData).forEach(key => {
+          // UUID(36文字)じゃなければ古い名前データと判定
+          if (key.length !== 36) {
+            Object.entries(globalData[key]).forEach(([k, v]) => {
+              if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
+              else parsed[k] = v as PastAvailability;
+            });
+          }
+        });
+
+        // デバイスIDのデータで上書き（最新優先）
         if (globalData[currentGuestId]) {
-          const parsed: Record<string, PastAvailability> = {};
           Object.entries(globalData[currentGuestId]).forEach(([k, v]) => {
             if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
             else parsed[k] = v as PastAvailability;
           });
-          setPastAvailabilities(parsed);
         }
+        setPastAvailabilities(parsed);
       }
 
       if (sData) await fetchStats(sData);
@@ -188,7 +197,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     if (!guestName) return alert('名前を入力してね！');
     setLoading(true);
 
-    // 💡 名前ではなく、イベントID×デバイスID で上書きするかどうかを判定する
     const { data: resData } = await supabase
       .from('responses')
       .upsert(
@@ -382,7 +390,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   <tbody>
                     {matrix.map((row, i) => (
                       <tr key={i} className="hover:bg-gray-50">
-                        {/* 💡 同姓同名でもちゃんと別々の行として表示されるよ！ */}
                         <td className="p-3 border-b font-medium sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.guestName}</td>
                         {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => (
                           <td key={slot.id} className="p-3 border-b text-center text-xl">{getStatusIcon(row.answers[slot.id])}</td>
