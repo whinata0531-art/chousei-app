@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Trash2, Link as LinkIcon, Share2, CalendarDays, History, CalendarCheck, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Link as LinkIcon, Share2, CalendarDays, History, CalendarCheck, ChevronRight, Settings } from 'lucide-react';
 import { addMinutes, format, addDays } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import Link from 'next/link';
@@ -16,7 +16,7 @@ const getFixedDate = (dbDateStr: string) => {
 };
 
 export default function TopPage() {
-  const [activeTab, setActiveTab] = useState<'create' | 'my-schedule'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'my-schedule' | 'settings'>('create');
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -27,7 +27,7 @@ export default function TopPage() {
 
   const [mySchedules, setMySchedules] = useState<ConfirmedSchedule[]>([]);
   const [fetchingSchedules, setFetchingSchedules] = useState(false);
-  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]); // 💡 最近見たイベントの履歴
+  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
 
   const [bulkStartDate, setBulkStartDate] = useState('');
   const [bulkEndDate, setBulkEndDate] = useState('');
@@ -35,6 +35,9 @@ export default function TopPage() {
   const [bulkStart, setBulkStart] = useState('12:00');
   const [bulkEnd, setBulkEnd] = useState('18:00');
   const [bulkInterval, setBulkInterval] = useState('120');
+
+  const [deviceGuestId, setDeviceGuestId] = useState('');
+  const [transferIdInput, setTransferIdInput] = useState('');
 
   const DOW_LABELS = [
     { label: '日', val: 0 }, { label: '月', val: 1 }, { label: '火', val: 2 },
@@ -46,17 +49,30 @@ export default function TopPage() {
       const saved = localStorage.getItem('hostEventHistory');
       if (saved) setHostHistory(JSON.parse(saved));
       
-      const savedRecent = localStorage.getItem('recentEvents');
-      if (savedRecent) setRecentEvents(JSON.parse(savedRecent));
-      
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
         currentGuestId = crypto.randomUUID();
         localStorage.setItem('deviceGuestId', currentGuestId);
       }
+      setDeviceGuestId(currentGuestId);
+      
+      // 💡 マイ予定とクラウド履歴の取得を同時実行！
       fetchMySchedules(currentGuestId);
+      fetchRecentEvents(currentGuestId);
     }
   }, []);
+
+  const fetchRecentEvents = async (guestId: string) => {
+    const { data } = await supabase
+      .from('user_recent_events')
+      .select('*')
+      .eq('guest_id', guestId)
+      .order('accessed_at', { ascending: false })
+      .limit(10);
+    if (data) {
+      setRecentEvents(data.map((d: any) => ({ id: d.event_id, title: d.event_title, lastAccessed: d.accessed_at })));
+    }
+  };
 
   const fetchMySchedules = async (guestId: string) => {
     setFetchingSchedules(true);
@@ -130,8 +146,7 @@ export default function TopPage() {
     if (!title || slots.some(s => !s.startAt || !s.endAt)) return alert('タイトルとすべての日程を入力してね！');
     setLoading(true);
 
-    let currentGuestId = localStorage.getItem('deviceGuestId');
-    const { data: eventData, error: eventError } = await supabase.from('events').insert([{ title, description, host_id: currentGuestId }]).select('id').single();
+    const { data: eventData, error: eventError } = await supabase.from('events').insert([{ title, description, host_id: deviceGuestId }]).select('id').single();
     if (eventError || !eventData) { alert('エラーが発生しました'); setLoading(false); return; }
 
     const slotsToInsert = slots.map(s => ({
@@ -145,11 +160,15 @@ export default function TopPage() {
     localStorage.setItem('hostEventHistory', JSON.stringify(updatedHistory));
     setHostHistory(updatedHistory);
 
-    // 💡 自分が作ったイベントも「最近見たイベント」に追加する！
-    const newRecent = { id: eventData.id, title, lastAccessed: Date.now() };
-    const updatedRecent = [newRecent, ...recentEvents.filter(r => r.id !== eventData.id)].slice(0, 10);
-    localStorage.setItem('recentEvents', JSON.stringify(updatedRecent));
-    setRecentEvents(updatedRecent);
+    // 💡 自分が作ったイベントもクラウドの履歴に保存
+    await supabase.from('user_recent_events').upsert({
+      guest_id: deviceGuestId,
+      event_id: eventData.id,
+      event_title: title,
+      accessed_at: Date.now()
+    }, { onConflict: 'guest_id,event_id' });
+    
+    await fetchRecentEvents(deviceGuestId);
 
     setCreatedEventId(eventData.id);
     setLoading(false);
@@ -159,6 +178,17 @@ export default function TopPage() {
     if (navigator.share) {
       try { await navigator.share({ title: '日程調整', text: `${title} の日程調整をお願いします！`, url }); } catch (error) {}
     } else { alert('URLをコピーしてね！'); }
+  };
+
+  const handleTransfer = () => {
+    if (transferIdInput.length < 20) {
+      return alert('正しい引き継ぎIDを入力してください！');
+    }
+    if (confirm('現在のデータに上書きして引き継ぎますか？')) {
+      localStorage.setItem('deviceGuestId', transferIdInput.trim());
+      alert('データの引き継ぎが完了しました！画面を再読み込みします。');
+      window.location.reload();
+    }
   };
 
   if (createdEventId) {
@@ -184,11 +214,14 @@ export default function TopPage() {
   return (
     <div className="max-w-xl mx-auto p-4 mt-6 space-y-6">
       <div className="flex bg-gray-200 rounded-lg p-1 shadow">
-        <button onClick={() => setActiveTab('create')} className={`flex-1 py-3 text-sm font-bold rounded-md transition-all ${activeTab === 'create' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-          🗓 新しく作成する
+        <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'create' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+          🗓 作成
         </button>
-        <button onClick={() => setActiveTab('my-schedule')} className={`flex-1 py-3 text-sm font-bold rounded-md transition-all ${activeTab === 'my-schedule' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-          📅 自分の確定予定
+        <button onClick={() => setActiveTab('my-schedule')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'my-schedule' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+          📅 マイ予定
+        </button>
+        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'settings' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+          ⚙️ 設定
         </button>
       </div>
 
@@ -268,7 +301,6 @@ export default function TopPage() {
 
       {activeTab === 'my-schedule' && (
         <div className="space-y-6">
-          {/* --- 確定予定エリア --- */}
           <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
             <div className="flex items-center gap-2 mb-6 text-yellow-600">
               <CalendarCheck size={24} />
@@ -315,7 +347,6 @@ export default function TopPage() {
             )}
           </div>
 
-          {/* 💡 --- 最近見た・調整中のイベントエリア --- */}
           <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-400">
             <div className="flex items-center gap-2 mb-6 text-blue-600">
               <History size={24} />
@@ -337,6 +368,57 @@ export default function TopPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'settings' && (
+        <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-gray-500">
+          <div className="flex items-center gap-2 mb-6 text-gray-700">
+            <Settings size={24} />
+            <h2 className="text-xl font-bold">データ引き継ぎ設定</h2>
+          </div>
+
+          <p className="text-sm text-gray-600 mb-6 bg-gray-50 p-4 rounded-lg border">
+            ホーム画面に追加したアプリ版や、別のブラウザで、現在のクラウドデータを完全に同期できます。
+          </p>
+
+          <div className="space-y-8">
+            <div>
+              <label className="block text-sm font-bold mb-2 text-blue-800">① 今のデータを引き継ぎたい場合</label>
+              <p className="text-xs text-gray-500 mb-2">下のIDをコピーして、引き継ぎ先のアプリで入力してください。</p>
+              <div className="flex gap-2">
+                <input readOnly value={deviceGuestId} className="flex-1 p-3 bg-gray-100 border rounded-lg text-xs text-gray-600 outline-none" />
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(deviceGuestId); 
+                    alert('引き継ぎIDをコピーしました！\n引き継ぎ先のアプリを開いてペーストしてください。');
+                  }} 
+                  className="p-3 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300 transition shrink-0"
+                >
+                  コピー
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t pt-6">
+              <label className="block text-sm font-bold mb-2 text-green-800">② 別のデータをここに復元したい場合</label>
+              <p className="text-xs text-gray-500 mb-2">コピーした引き継ぎIDを下にペーストして復元ボタンを押してください。</p>
+              <div className="flex gap-2">
+                <input 
+                  value={transferIdInput} 
+                  onChange={e => setTransferIdInput(e.target.value)} 
+                  placeholder="引き継ぎIDをペースト" 
+                  className="flex-1 p-3 border border-gray-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-green-500" 
+                />
+                <button 
+                  onClick={handleTransfer} 
+                  className="p-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition shadow shrink-0"
+                >
+                  復元する
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -54,23 +54,20 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       setDeviceGuestId(currentGuestId);
 
       fetchMySchedules(currentGuestId);
+      fetchRecentEvents(currentGuestId);
 
       const { data: eData } = await supabase.from('events').select('*').eq('id', eventId).single();
       const { data: sData } = await supabase.from('slots').select('*').eq('event_id', eventId).order('start_at');
       
       if (eData) {
         setEvent(eData);
-        // 💡 ページを開いた瞬間に「最近見たイベント」として保存する！
-        const savedRecent = localStorage.getItem('recentEvents');
-        let recents: RecentEvent[] = savedRecent ? JSON.parse(savedRecent) : [];
-        recents = recents.filter(r => r.id !== eventId);
-        recents.unshift({ id: eventId, title: eData.title, lastAccessed: Date.now() });
-        recents = recents.slice(0, 10); // 最新10件まで保存
-        localStorage.setItem('recentEvents', JSON.stringify(recents));
-        setRecentEvents(recents);
-      } else {
-        const savedRecent = localStorage.getItem('recentEvents');
-        if (savedRecent) setRecentEvents(JSON.parse(savedRecent));
+        // 💡 クラウドに「このイベント見たよ！」を記録
+        await supabase.from('user_recent_events').upsert({
+          guest_id: currentGuestId,
+          event_id: eventId,
+          event_title: eData.title,
+          accessed_at: Date.now()
+        }, { onConflict: 'guest_id,event_id' });
       }
       
       if (sData) {
@@ -100,49 +97,35 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           setAnswers(loadedAnswers);
         }
 
+        // 💡 クラウドの「最強コピー記憶」を取得
+        const { data: copies } = await supabase.from('user_smart_copies').select('*').eq('guest_id', currentGuestId);
+        if (copies) {
+          const parsed: Record<string, PastAvailability> = {};
+          copies.forEach((c: any) => {
+            parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at };
+          });
+          setPastAvailabilities(parsed);
+        }
+
+        // 💡 仮確定された日程があったら、クラウドの記憶に強制的に「バツ」を書き込む
         const confirmedSlots = sData.filter(s => s.is_confirmed);
         if (confirmedSlots.length > 0 && existingResponse) {
-          const globalDataStr = localStorage.getItem('globalAvailabilities');
-          const globalData = globalDataStr ? JSON.parse(globalDataStr) : {};
-          const myTimes = globalData[currentGuestId] || {};
+          const copyUpserts: any[] = [];
           const now = Date.now();
-          
-          let hasBlocked = false;
           confirmedSlots.forEach(slot => {
             if (loadedAnswers[slot.id] === 'maru' || loadedAnswers[slot.id] === 'sankaku') {
-              myTimes[`${slot.start_at}_${slot.end_at}`] = { status: 'batsu', updated: now };
-              hasBlocked = true;
+              copyUpserts.push({ 
+                guest_id: currentGuestId, 
+                time_key: `${slot.start_at}_${slot.end_at}`, 
+                status: 'batsu', 
+                updated_at: now 
+              });
             }
           });
-
-          if (hasBlocked) {
-            globalData[currentGuestId] = myTimes;
-            localStorage.setItem('globalAvailabilities', JSON.stringify(globalData));
+          if (copyUpserts.length > 0) {
+            await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
           }
         }
-      }
-
-      const globalDataStr = localStorage.getItem('globalAvailabilities');
-      if (globalDataStr) {
-        const globalData = JSON.parse(globalDataStr);
-        const parsed: Record<string, PastAvailability> = {};
-
-        Object.keys(globalData).forEach(key => {
-          if (key.length !== 36) {
-            Object.entries(globalData[key]).forEach(([k, v]) => {
-              if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
-              else parsed[k] = v as PastAvailability;
-            });
-          }
-        });
-
-        if (globalData[currentGuestId]) {
-          Object.entries(globalData[currentGuestId]).forEach(([k, v]) => {
-            if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
-            else parsed[k] = v as PastAvailability;
-          });
-        }
-        setPastAvailabilities(parsed);
       }
 
       if (sData) await fetchStats(sData);
@@ -150,6 +133,18 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     };
     fetchAll();
   }, [eventId]);
+
+  const fetchRecentEvents = async (guestId: string) => {
+    const { data } = await supabase
+      .from('user_recent_events')
+      .select('*')
+      .eq('guest_id', guestId)
+      .order('accessed_at', { ascending: false })
+      .limit(10);
+    if (data) {
+      setRecentEvents(data.map((d: any) => ({ id: d.event_id, title: d.event_title, lastAccessed: d.accessed_at })));
+    }
+  };
 
   const fetchStats = async (currentSlots: Slot[]) => {
     const { data: responses } = await supabase.from('responses').select('*').eq('event_id', eventId).order('created_at');
@@ -259,7 +254,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     });
 
     setAnswers(newAnswers);
-    alert(`最新の予定を優先して ${appliedCount} 件の回答を推測したよ！\n※念のためズレがないか確認してね！`);
+    alert(`クラウドの予定を優先して ${appliedCount} 件の回答を推測したよ！\n※念のためズレがないか確認してね！`);
   };
 
   const handleSubmit = async () => {
@@ -279,16 +274,19 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       const avails = Object.entries(answers).map(([slotId, status]) => ({ response_id: resData.id, slot_id: slotId, status }));
       await supabase.from('availabilities').insert(avails);
 
-      const globalDataStr = localStorage.getItem('globalAvailabilities');
-      const globalData = globalDataStr ? JSON.parse(globalDataStr) : {};
-      const myTimes = globalData[deviceGuestId] || {};
+      // 💡 最強コピーの記憶をクラウド（Supabase）に保存！
       const now = Date.now();
-      slots.forEach(slot => myTimes[`${slot.start_at}_${slot.end_at}`] = { status: answers[slot.id], updated: now });
-      globalData[deviceGuestId] = myTimes;
-      localStorage.setItem('globalAvailabilities', JSON.stringify(globalData));
+      const copyUpserts = slots.map(slot => ({
+        guest_id: deviceGuestId,
+        time_key: `${slot.start_at}_${slot.end_at}`,
+        status: answers[slot.id],
+        updated_at: now
+      }));
+      await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
+
       localStorage.setItem('lastGuestName', guestName);
 
-      alert('回答を保存しました！🎉\nみんなの回答タブも更新されたよ！');
+      alert('回答を保存しました！🎉\nクラウドに同期されたよ！');
       await fetchStats(slots);
       await fetchMySchedules(deviceGuestId);
       setActiveTab('result');
@@ -385,7 +383,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
           {Object.keys(pastAvailabilities).length > 0 && (
             <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-100">
-              <p className="text-sm text-purple-800 font-bold mb-2">💡 最新の予定から推測できます</p>
+              <p className="text-sm text-purple-800 font-bold mb-2">💡 クラウドの予定から推測できます</p>
               <button onClick={applySmartCopy} className="w-full py-2 bg-purple-600 text-white text-sm font-bold rounded shadow hover:bg-purple-700 transition">
                 スマートコピーで一括入力
               </button>
@@ -517,7 +515,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       {activeTab === 'my-schedule' && (
         <div className="space-y-6">
-          {/* --- 確定予定エリア --- */}
           <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
             <div className="flex items-center gap-2 mb-6 text-yellow-600">
               <CalendarCheck size={24} />
@@ -564,7 +561,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             )}
           </div>
 
-          {/* 💡 --- 最近見た・調整中のイベントエリア --- */}
           <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-400">
             <div className="flex items-center gap-2 mb-6 text-blue-600">
               <History size={24} />
