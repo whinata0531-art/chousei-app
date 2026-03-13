@@ -6,14 +6,16 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { use } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, PlusCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, PlusCircle, Pin, CalendarCheck } from 'lucide-react';
 
-type Slot = { id: string; start_at: string; end_at: string };
+type Slot = { id: string; start_at: string; end_at: string; is_confirmed: boolean };
 type Status = 'maru' | 'sankaku' | 'batsu';
 type PastAvailability = { status: Status; updated: number };
 
 type AggregatedSlot = Slot & { maru: number; sankaku: number; batsu: number; total: number; originalIndex: number; };
 type MatrixData = { guestId: string; guestName: string; answers: Record<string, string>; };
+
+type ConfirmedSchedule = { id: string; event_id: string; start_at: string; end_at: string; eventTitle: string };
 
 const getFixedDate = (dbDateStr: string) => {
   return new Date(dbDateStr.substring(0, 16));
@@ -21,14 +23,12 @@ const getFixedDate = (dbDateStr: string) => {
 
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
-  const [activeTab, setActiveTab] = useState<'response' | 'result'>('response');
+  const [activeTab, setActiveTab] = useState<'response' | 'result' | 'my-schedule'>('response');
   const [event, setEvent] = useState<any>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 💡 スマホを識別するデバイスID
   const [deviceGuestId, setDeviceGuestId] = useState('');
-  
   const [guestName, setGuestName] = useState('');
   const [answers, setAnswers] = useState<Record<string, Status>>({});
   const [pastAvailabilities, setPastAvailabilities] = useState<Record<string, PastAvailability>>({});
@@ -39,9 +39,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [hideBatsu, setHideBatsu] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(true); 
 
+  const [mySchedules, setMySchedules] = useState<ConfirmedSchedule[]>([]);
+  const [fetchingSchedules, setFetchingSchedules] = useState(false);
+
   useEffect(() => {
     const fetchAll = async () => {
-      // 1. デバイスIDの取得・生成
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
         currentGuestId = crypto.randomUUID();
@@ -49,7 +51,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       }
       setDeviceGuestId(currentGuestId);
 
-      // 2. イベント情報の取得
+      fetchMySchedules(currentGuestId);
+
       const { data: eData } = await supabase.from('events').select('*').eq('id', eventId).single();
       const { data: sData } = await supabase.from('slots').select('*').eq('event_id', eventId).order('start_at');
       
@@ -67,30 +70,49 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           .eq('guest_id', currentGuestId)
           .single();
 
+        let loadedAnswers = { ...initialAnswers };
+
         if (existingResponse) {
           setGuestName(existingResponse.guest_name);
           const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', existingResponse.id);
           if (aData) {
-            const loadedAnswers = { ...initialAnswers };
             aData.forEach(a => loadedAnswers[a.slot_id] = a.status as Status);
             setAnswers(loadedAnswers);
           }
         } else {
           const savedName = localStorage.getItem('lastGuestName');
           if (savedName) setGuestName(savedName);
-          setAnswers(initialAnswers);
+          setAnswers(loadedAnswers);
+        }
+
+        const confirmedSlots = sData.filter(s => s.is_confirmed);
+        if (confirmedSlots.length > 0 && existingResponse) {
+          const globalDataStr = localStorage.getItem('globalAvailabilities');
+          const globalData = globalDataStr ? JSON.parse(globalDataStr) : {};
+          const myTimes = globalData[currentGuestId] || {};
+          const now = Date.now();
+          
+          let hasBlocked = false;
+          confirmedSlots.forEach(slot => {
+            if (loadedAnswers[slot.id] === 'maru' || loadedAnswers[slot.id] === 'sankaku') {
+              myTimes[`${slot.start_at}_${slot.end_at}`] = { status: 'batsu', updated: now };
+              hasBlocked = true;
+            }
+          });
+
+          if (hasBlocked) {
+            globalData[currentGuestId] = myTimes;
+            localStorage.setItem('globalAvailabilities', JSON.stringify(globalData));
+          }
         }
       }
 
-      // 3. グローバルな過去予定の読み込み（最強コピー復活！）
       const globalDataStr = localStorage.getItem('globalAvailabilities');
       if (globalDataStr) {
         const globalData = JSON.parse(globalDataStr);
         const parsed: Record<string, PastAvailability> = {};
 
-        // 💡 救済措置：古い「名前」で保存されていたデータを全部引き継ぐ！
         Object.keys(globalData).forEach(key => {
-          // UUID(36文字)じゃなければ古い名前データと判定
           if (key.length !== 36) {
             Object.entries(globalData[key]).forEach(([k, v]) => {
               if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
@@ -99,7 +121,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           }
         });
 
-        // デバイスIDのデータで上書き（最新優先）
         if (globalData[currentGuestId]) {
           Object.entries(globalData[currentGuestId]).forEach(([k, v]) => {
             if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
@@ -141,6 +162,39 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       return { guestId: res.guest_id, guestName: res.guest_name, answers: userAnswers };
     });
     setMatrix(matrixData);
+  };
+
+  const fetchMySchedules = async (guestId: string) => {
+    setFetchingSchedules(true);
+    const { data: resData } = await supabase.from('responses').select('id, event_id').eq('guest_id', guestId);
+    if (!resData || resData.length === 0) { setFetchingSchedules(false); return; }
+
+    const resIds = resData.map(r => r.id);
+    const { data: avails } = await supabase.from('availabilities').select('slot_id, status').in('response_id', resIds).in('status', ['maru', 'sankaku']);
+    if (!avails || avails.length === 0) { setFetchingSchedules(false); return; }
+
+    const slotIds = avails.map(a => a.slot_id);
+    const { data: slotsData } = await supabase.from('slots').select('*').in('id', slotIds).eq('is_confirmed', true);
+    if (!slotsData || slotsData.length === 0) { setFetchingSchedules(false); return; }
+
+    const eventIds = [...new Set(slotsData.map(s => s.event_id))];
+    const { data: eventsData } = await supabase.from('events').select('id, title').in('id', eventIds);
+
+    const schedules = slotsData.map(slot => {
+      const event = eventsData?.find(e => e.id === slot.event_id);
+      return { ...slot, eventTitle: event?.title || '不明なイベント' };
+    });
+
+    schedules.sort((a, b) => getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime());
+    setMySchedules(schedules);
+    setFetchingSchedules(false);
+  };
+
+  const toggleConfirmSlot = async (slotId: string, currentIsConfirmed: boolean) => {
+    if (!confirm(currentIsConfirmed ? 'この日程の仮確定を解除しますか？' : 'この日程を仮確定にしますか？\n（マイページに反映され、他イベントのスマートコピーでは❌になります）')) return;
+    setLoading(true);
+    await supabase.from('slots').update({ is_confirmed: !currentIsConfirmed }).eq('id', slotId);
+    window.location.reload(); 
   };
 
   const applySmartCopy = () => {
@@ -221,6 +275,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       alert('回答を保存しました！🎉\nみんなの回答タブも更新されたよ！');
       await fetchStats(slots);
+      
+      await fetchMySchedules(deviceGuestId);
+      
       setActiveTab('result');
     }
     setLoading(false);
@@ -230,6 +287,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     let result = [...aggregated];
     if (hideBatsu) result = result.filter(s => s.batsu === 0);
     result.sort((a, b) => {
+      if (a.is_confirmed && !b.is_confirmed) return -1;
+      if (!a.is_confirmed && b.is_confirmed) return 1;
+
       if (sortType === 'maru') {
         if (b.maru !== a.maru) return b.maru - a.maru;
         if (b.sankaku !== a.sankaku) return b.sankaku - a.sankaku;
@@ -251,6 +311,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   if (loading) return <div className="text-center mt-20">読み込み中...</div>;
   if (!event) return <div className="text-center mt-20 text-red-500 font-bold">イベントが見つかりません</div>;
 
+  const confirmedSlots = slots.filter(s => s.is_confirmed);
+  const isEventConfirmed = confirmedSlots.length > 0;
+
   return (
     <div className="max-w-2xl mx-auto p-4 mt-4 space-y-6">
       <div className="flex justify-end mb-2">
@@ -258,8 +321,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           href="/" 
           className="flex items-center gap-1 text-sm bg-blue-50 text-blue-600 px-3 py-2 rounded-lg font-bold hover:bg-blue-100 transition-colors border border-blue-200 shadow-sm"
         >
-          <PlusCircle size={16} />
-          自分も新しくイベントを作る
+          <PlusCircle size={16} /> 新しく作る
         </Link>
       </div>
 
@@ -268,20 +330,44 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         {event.description && <p className="text-gray-600 whitespace-pre-wrap">{event.description}</p>}
       </div>
 
+      {isEventConfirmed && activeTab !== 'my-schedule' && (
+        <div className="bg-yellow-50 border-4 border-yellow-400 p-6 rounded-2xl shadow-md text-center">
+          <div className="flex items-center justify-center gap-2 text-yellow-600 mb-2">
+            <Pin size={24} />
+            <h2 className="text-xl font-extrabold">仮確定の日程があります！</h2>
+          </div>
+          <div className="bg-white rounded-lg p-3 inline-block shadow-sm">
+            {confirmedSlots.map(s => (
+              <div key={s.id} className="text-lg font-bold text-gray-800">
+                {format(getFixedDate(s.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(s.end_at), 'HH:mm')}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-yellow-700 mt-4 font-bold">
+            ※マイ予定タブに追加されました！<br />
+            ※他イベントのスマートコピーでは自動的に「予定あり❌」になります。
+          </p>
+        </div>
+      )}
+
       <div className="flex bg-gray-200 rounded-lg p-1 sticky top-4 z-20 shadow">
-        <button onClick={() => setActiveTab('response')} className={`flex-1 py-3 text-sm font-bold rounded-md transition-all ${activeTab === 'response' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-          📝 回答を入力する
+        <button onClick={() => setActiveTab('response')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'response' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+          📝 回答
         </button>
-        <button onClick={() => setActiveTab('result')} className={`flex-1 py-3 text-sm font-bold rounded-md transition-all ${activeTab === 'result' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-          📊 みんなの回答を見る
+        <button onClick={() => setActiveTab('result')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'result' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+          📊 集計
+        </button>
+        <button onClick={() => setActiveTab('my-schedule')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'my-schedule' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+          📅 マイ予定
         </button>
       </div>
 
+      {/* --- 回答タブ --- */}
       {activeTab === 'response' && (
-        <div className="bg-white rounded-xl shadow p-6 border-t-4 border-blue-500">
+        <div className="bg-white rounded-xl shadow p-6 border-t-4 border-blue-500 relative">
           <div className="mb-4">
             <label className="block text-sm font-bold mb-1">お名前 *</label>
-            <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)}
+            <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} onBlur={handleNameBlur}
               className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力" />
           </div>
 
@@ -296,8 +382,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
           <div className="space-y-3 mb-6 mt-4">
             {slots.map(slot => (
-              <div key={slot.id} className="p-3 border rounded-lg hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="text-sm font-bold text-gray-700">
+              <div key={slot.id} className={`p-3 border rounded-lg hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${slot.is_confirmed ? 'bg-yellow-50 border-yellow-300' : ''}`}>
+                <div className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                  {slot.is_confirmed && <span className="bg-yellow-400 text-xs px-2 py-1 rounded font-bold">仮確定</span>}
                   {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
                 </div>
                 <div className="flex bg-gray-100 p-1 rounded-lg sm:w-64 shrink-0 gap-1">
@@ -318,6 +405,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
+      {/* --- 集計タブ --- */}
       {activeTab === 'result' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow p-6 border-t-4 border-green-500 transition-all">
@@ -350,17 +438,28 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
                 <div className="space-y-4">
                   {sortedAndFilteredSlots.map((slot, i) => (
-                    <div key={slot.id} className={`p-4 border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${i === 0 && sortType === 'maru' ? 'bg-yellow-50 border-yellow-300' : 'bg-white'}`}>
-                      <div>
-                        {i === 0 && sortType === 'maru' && <span className="inline-block px-2 py-1 bg-yellow-400 text-xs font-bold rounded mb-2">🏆 最有力候補</span>}
-                        <div className="font-bold text-lg">
-                          {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
+                    <div key={slot.id} className={`p-4 border rounded-xl flex flex-col gap-4 transition-all ${slot.is_confirmed ? 'bg-yellow-100 border-yellow-400 shadow-md transform scale-[1.02]' : 'bg-white'}`}>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded-full mb-2 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
+                          <div className="font-bold text-lg">
+                            {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
+                          </div>
+                        </div>
+                        <div className="flex gap-4 text-center">
+                          <div><div className="text-xs text-gray-500">⭕️</div><div className="font-bold text-green-600 text-xl">{slot.maru}</div></div>
+                          <div><div className="text-xs text-gray-500">🔺</div><div className="font-bold text-orange-500 text-xl">{slot.sankaku}</div></div>
+                          <div><div className="text-xs text-gray-500">❌</div><div className="font-bold text-red-500 text-xl">{slot.batsu}</div></div>
                         </div>
                       </div>
-                      <div className="flex gap-4 text-center">
-                        <div><div className="text-xs text-gray-500">⭕️</div><div className="font-bold text-green-600 text-xl">{slot.maru}</div></div>
-                        <div><div className="text-xs text-gray-500">🔺</div><div className="font-bold text-orange-500 text-xl">{slot.sankaku}</div></div>
-                        <div><div className="text-xs text-gray-500">❌</div><div className="font-bold text-red-500 text-xl">{slot.batsu}</div></div>
+
+                      <div className="border-t pt-3 mt-1 text-right">
+                        <button 
+                          onClick={() => toggleConfirmSlot(slot.id, slot.is_confirmed)}
+                          className={`px-4 py-2 text-sm font-bold rounded-lg shadow transition-colors ${slot.is_confirmed ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
+                        >
+                          {slot.is_confirmed ? '仮確定を解除' : '📌 仮確定にする (全員操作可)'}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -381,7 +480,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     <tr>
                       <th className="p-3 border-b-2 bg-gray-50 font-bold text-gray-700 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">名前</th>
                       {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => (
-                        <th key={slot.id} className="p-3 border-b-2 bg-gray-50 text-xs font-medium text-gray-600">
+                        <th key={slot.id} className={`p-3 border-b-2 text-xs font-medium ${slot.is_confirmed ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-50 text-gray-600'}`}>
+                          {slot.is_confirmed && '📌'}<br/>
                           {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>{format(getFixedDate(slot.start_at), 'HH:mm')}
                         </th>
                       ))}
@@ -392,7 +492,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="p-3 border-b font-medium sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.guestName}</td>
                         {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => (
-                          <td key={slot.id} className="p-3 border-b text-center text-xl">{getStatusIcon(row.answers[slot.id])}</td>
+                          <td key={slot.id} className={`p-3 border-b text-center text-xl ${slot.is_confirmed ? 'bg-yellow-50' : ''}`}>{getStatusIcon(row.answers[slot.id])}</td>
                         ))}
                       </tr>
                     ))}
@@ -403,6 +503,58 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           </div>
         </div>
       )}
+
+      {/* 💡 マイ予定タブ --- */}
+      {activeTab === 'my-schedule' && (
+        <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
+          <div className="flex items-center gap-2 mb-6 text-yellow-600">
+            <CalendarCheck size={24} />
+            <h2 className="text-xl font-bold">あなたが参加する確定予定</h2>
+          </div>
+          
+          {fetchingSchedules ? (
+            <p className="text-center text-gray-500 py-10">読み込み中...</p>
+          ) : mySchedules.length === 0 ? (
+            <div className="text-center py-10 bg-gray-50 rounded-lg">
+              <p className="text-gray-500 font-bold mb-2">まだ確定した予定はありません。</p>
+              <p className="text-sm text-gray-400">このイベントや他のイベントで仮確定された日程がここに並びます。</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {mySchedules.map((schedule, i) => {
+                const isFirstOfDay = i === 0 || format(getFixedDate(mySchedules[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
+                return (
+                  <div key={schedule.id}>
+                    {isFirstOfDay && (
+                      <h3 className="text-sm font-bold text-gray-500 mb-2 mt-4 border-b pb-1">
+                        {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
+                      </h3>
+                    )}
+                    {/* 💡 ボタンっぽくしてタップできるのをアピール！ */}
+                    <Link href={`/event/${schedule.event_id}`} className="block bg-white border-2 border-yellow-300 p-4 rounded-xl hover:bg-yellow-50 active:bg-yellow-100 transition shadow-sm group">
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
+                          <span className="font-extrabold text-lg text-gray-800">
+                            {format(getFixedDate(schedule.start_at), 'HH:mm')} 〜 {format(getFixedDate(schedule.end_at), 'HH:mm')}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm text-gray-700 font-bold truncate pr-4">{schedule.eventTitle}</p>
+                        <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
+                          調整画面へ <ChevronRight size={14} />
+                        </div>
+                      </div>
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
