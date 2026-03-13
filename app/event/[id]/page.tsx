@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { use } from 'react';
-import Link from 'next/link'; // 👈 リンク遷移用にこれを追加！
-import { ChevronDown, ChevronRight, PlusCircle } from 'lucide-react'; // 👈 PlusCircleを追加！
+import Link from 'next/link';
+import { ChevronDown, ChevronRight, PlusCircle } from 'lucide-react';
 
 type Slot = { id: string; start_at: string; end_at: string };
 type Status = 'maru' | 'sankaku' | 'batsu';
@@ -14,6 +14,11 @@ type PastAvailability = { status: Status; updated: number };
 
 type AggregatedSlot = Slot & { maru: number; sankaku: number; batsu: number; total: number; originalIndex: number; };
 type MatrixData = { guestName: string; answers: Record<string, string>; };
+
+// 💡 時差バグ修正！タイムゾーン情報を切り捨てて、ホストが入力した「文字盤の数字」のままの時間を生成する関数
+const getFixedDate = (dbDateStr: string) => {
+  return new Date(dbDateStr.substring(0, 16));
+};
 
 export default function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
@@ -44,7 +49,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         setSlots(sData);
         const initialAnswers: Record<string, Status> = {};
         sData.forEach(s => initialAnswers[s.id] = 'maru'); 
-        setAnswers(initialAnswers);
+
+        // 💡 過去の名前があれば、画面を開いた瞬間に自動で入力＆履歴をロードする！
+        const savedName = localStorage.getItem('lastGuestName');
+        if (savedName) {
+          setGuestName(savedName);
+          await loadUserData(savedName, initialAnswers, sData);
+        } else {
+          setAnswers(initialAnswers);
+        }
       }
 
       if (sData) await fetchStats(sData);
@@ -81,25 +94,25 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setMatrix(matrixData);
   };
 
-  const handleNameBlur = async () => {
-    if (!guestName) return;
+  // 指定した名前の人のデータを読み込む関数
+  const loadUserData = async (name: string, defaultAnswers: Record<string, Status>, currentSlots: Slot[]) => {
+    const { data } = await supabase.from('responses').select('id').eq('event_id', eventId).eq('guest_name', name).single();
+    let loadedAnswers = { ...defaultAnswers };
 
-    const { data } = await supabase.from('responses').select('id').eq('event_id', eventId).eq('guest_name', guestName).single();
     if (data) {
       const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', data.id);
       if (aData) {
-        const existingAnswers = { ...answers };
-        aData.forEach(a => existingAnswers[a.slot_id] = a.status as Status);
-        setAnswers(existingAnswers);
+        aData.forEach(a => loadedAnswers[a.slot_id] = a.status as Status);
       }
     }
+    setAnswers(loadedAnswers);
 
     const globalDataStr = localStorage.getItem('globalAvailabilities');
     if (globalDataStr) {
       const globalData = JSON.parse(globalDataStr);
-      if (globalData[guestName]) {
+      if (globalData[name]) {
         const parsed: Record<string, PastAvailability> = {};
-        Object.entries(globalData[guestName]).forEach(([k, v]) => {
+        Object.entries(globalData[name]).forEach(([k, v]) => {
           if (typeof v === 'string') parsed[k] = { status: v as Status, updated: 0 };
           else parsed[k] = v as PastAvailability;
         });
@@ -108,19 +121,25 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     }
   };
 
+  const handleNameBlur = async () => {
+    if (!guestName) return;
+    await loadUserData(guestName, answers, slots);
+  };
+
   const applySmartCopy = () => {
     const newAnswers = { ...answers };
     let appliedCount = 0;
 
     slots.forEach(slot => {
-      const sStart = new Date(slot.start_at).getTime();
-      const sEnd = new Date(slot.end_at).getTime();
+      // 💡 時差修正版の時間を取得
+      const sStart = getFixedDate(slot.start_at).getTime();
+      const sEnd = getFixedDate(slot.end_at).getTime();
 
       const overlaps: { start: number; end: number; status: Status; updated: number }[] = [];
       Object.entries(pastAvailabilities).forEach(([key, past]) => {
         const [pStartStr, pEndStr] = key.split('_');
-        const pStart = new Date(pStartStr).getTime();
-        const pEnd = new Date(pEndStr).getTime();
+        const pStart = getFixedDate(pStartStr).getTime();
+        const pEnd = getFixedDate(pEndStr).getTime();
         
         if (Math.max(sStart, pStart) < Math.min(sEnd, pEnd)) {
           overlaps.push({ start: pStart, end: pEnd, status: past.status, updated: past.updated });
@@ -179,6 +198,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       globalData[guestName] = myTimes;
       localStorage.setItem('globalAvailabilities', JSON.stringify(globalData));
 
+      // 💡 次回から自動入力されるように名前を保存！
+      localStorage.setItem('lastGuestName', guestName);
+
       alert('回答を保存しました！🎉\nみんなの回答タブも更新されたよ！');
       await fetchStats(slots);
       setActiveTab('result');
@@ -190,16 +212,17 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     let result = [...aggregated];
     if (hideBatsu) result = result.filter(s => s.batsu === 0);
     result.sort((a, b) => {
+      // 💡 時差修正版のDateを使って並び替え
       if (sortType === 'maru') {
         if (b.maru !== a.maru) return b.maru - a.maru;
         if (b.sankaku !== a.sankaku) return b.sankaku - a.sankaku;
-        return new Date(a.start_at).getTime() - new Date(b.start_at).getTime();
+        return getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime();
       } else if (sortType === 'time') {
-        return new Date(a.start_at).getTime() - new Date(b.start_at).getTime();
+        return getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime();
       } else if (sortType === 'batsu') {
         if (a.batsu !== b.batsu) return a.batsu - b.batsu;
         if (b.maru !== a.maru) return b.maru - a.maru;
-        return new Date(a.start_at).getTime() - new Date(b.start_at).getTime();
+        return getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime();
       }
       return 0;
     });
@@ -213,7 +236,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
   return (
     <div className="max-w-2xl mx-auto p-4 mt-4 space-y-6">
-      {/* 💡 ヘッダー部分に「新しく作る」ボタンを追加！ */}
       <div className="flex justify-end mb-2">
         <Link 
           href="/" 
@@ -238,18 +260,17 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </button>
       </div>
 
-      {/* --- 回答タブ --- */}
       {activeTab === 'response' && (
         <div className="bg-white rounded-xl shadow p-6 border-t-4 border-blue-500">
           <div className="mb-4">
             <label className="block text-sm font-bold mb-1">お名前 *</label>
             <input type="text" value={guestName} onChange={e => setGuestName(e.target.value)} onBlur={handleNameBlur}
-              className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力（過去の履歴が出ます）" />
+              className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力（自動で保存されます）" />
           </div>
 
           {Object.keys(pastAvailabilities).length > 0 && (
             <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-100">
-              <p className="text-sm text-purple-800 font-bold mb-2">💡 他の調整で入力した予定があります</p>
+              <p className="text-sm text-purple-800 font-bold mb-2">💡 前回の名前を自動入力しました！</p>
               <button onClick={applySmartCopy} className="w-full py-2 bg-purple-600 text-white text-sm font-bold rounded shadow hover:bg-purple-700 transition">
                 最新の予定から推測して一括入力（最強コピー）
               </button>
@@ -260,7 +281,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             {slots.map(slot => (
               <div key={slot.id} className="p-3 border rounded-lg hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-sm font-bold text-gray-700">
-                  {format(new Date(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(new Date(slot.end_at), 'HH:mm')}
+                  {/* 💡 ここでも getFixedDate を使う */}
+                  {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
                 </div>
                 <div className="flex bg-gray-100 p-1 rounded-lg sm:w-64 shrink-0 gap-1">
                   <button onClick={() => setAnswers({ ...answers, [slot.id]: 'maru' })}
@@ -280,7 +302,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
-      {/* --- 集計タブ --- */}
       {activeTab === 'result' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow p-6 border-t-4 border-green-500 transition-all">
@@ -317,7 +338,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <div>
                         {i === 0 && sortType === 'maru' && <span className="inline-block px-2 py-1 bg-yellow-400 text-xs font-bold rounded mb-2">🏆 最有力候補</span>}
                         <div className="font-bold text-lg">
-                          {format(new Date(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(new Date(slot.end_at), 'HH:mm')}
+                          {/* 💡 ここでも getFixedDate を使う */}
+                          {format(getFixedDate(slot.start_at), 'M/d (E) HH:mm', { locale: ja })} 〜 {format(getFixedDate(slot.end_at), 'HH:mm')}
                         </div>
                       </div>
                       <div className="flex gap-4 text-center">
@@ -345,7 +367,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <th className="p-3 border-b-2 bg-gray-50 font-bold text-gray-700 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">名前</th>
                       {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => (
                         <th key={slot.id} className="p-3 border-b-2 bg-gray-50 text-xs font-medium text-gray-600">
-                          {format(new Date(slot.start_at), 'M/d(E)', { locale: ja })}<br/>{format(new Date(slot.start_at), 'HH:mm')}
+                          {/* 💡 ここでも getFixedDate を使う */}
+                          {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>{format(getFixedDate(slot.start_at), 'HH:mm')}
                         </th>
                       ))}
                     </tr>

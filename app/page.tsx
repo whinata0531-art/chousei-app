@@ -98,7 +98,10 @@ export default function CreateEvent() {
     }
 
     const slotsToInsert = slots.map(s => ({
-      event_id: eventData.id, start_at: new Date(s.startAt).toISOString(), end_at: new Date(s.endAt).toISOString(),
+      event_id: eventData.id,
+      // 💡 時差バグ修正！入力を無理やりUTCとして保存し、文字盤の数字をそのまま維持する
+      start_at: `${s.startAt}:00+00:00`, 
+      end_at: `${s.endAt}:00+00:00`,
     }));
 
     await supabase.from('slots').insert(slotsToInsert);
@@ -143,7 +146,6 @@ export default function CreateEvent() {
     );
   }
 
-  // --- 手動入力や一括追加のUIは変更なし（前のコードと同じ） ---
   return (
     <div className="max-w-xl mx-auto p-6 mt-10 bg-white rounded-xl shadow-md">
       <h1 className="text-2xl font-bold mb-6">🗓 新しいイベントを作成</h1>
@@ -153,7 +155,6 @@ export default function CreateEvent() {
           <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 border rounded" placeholder="例: BNS合同練習" />
         </div>
         
-        {/* 一括作成ツール */}
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 space-y-3">
           <label className="block text-sm font-bold flex items-center gap-1 text-blue-800">
             <CalendarDays size={16} /> 期間と曜日で一括作成
@@ -185,7 +186,6 @@ export default function CreateEvent() {
           <button onClick={generateBulkSlots} className="w-full py-2 bg-blue-600 text-white font-bold rounded">枠を追加する</button>
         </div>
 
-        {/* 手動追加 ＆ 履歴呼び出し */}
         <div>
           <div className="flex justify-between items-end mb-2">
             <label className="block text-sm font-bold">候補日程 *</label>
