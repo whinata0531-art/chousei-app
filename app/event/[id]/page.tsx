@@ -341,8 +341,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <div className="text-center mb-6">
-        <h1 className="text-3xl font-bold mb-2 text-gray-800">{event.title}</h1>
-        {event.description && <p className="text-gray-600 whitespace-pre-wrap">{event.description}</p>}
+        {/* 💡 ダークモードの時は、少し明るくて見やすい「blue-400」にする！ */}
+        <h1 className="text-3xl font-bold mb-2 text-gray-800 dark:text-blue-400">{event.title}</h1>
+        
+        {/* 💡 説明文はタイトルの青を邪魔しないように、ほんのり青みがかった明るいグレー（slate-300）にするのがおすすめ！ */}
+        {event.description && <p className="text-gray-600 dark:text-slate-300 whitespace-pre-wrap">{event.description}</p>}
       </div>
 
       {isEventConfirmed && activeTab !== 'my-schedule' && (
