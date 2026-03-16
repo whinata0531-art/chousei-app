@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { use } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, PlusCircle, Pin, CalendarCheck, History } from 'lucide-react';
+import { ChevronDown, ChevronRight, PlusCircle, Pin, CalendarCheck, History, CalendarDays, Trash2 } from 'lucide-react';
 
 type Slot = { id: string; start_at: string; end_at: string; is_confirmed: boolean };
 type Status = 'maru' | 'sankaku' | 'batsu';
@@ -22,7 +22,6 @@ const getFixedDate = (dbDateStr: string) => {
   return new Date(dbDateStr.substring(0, 16));
 };
 
-// 💡 「終日」かどうかを判定して文字を返す便利関数
 const formatSlotTime = (startStr: string, endStr: string) => {
   const sTime = format(getFixedDate(startStr), 'HH:mm');
   const eTime = format(getFixedDate(endStr), 'HH:mm');
@@ -212,6 +211,28 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     window.location.reload(); 
   };
 
+  // 💡 固定シフトを反映する機能
+  const applyWeeklyRoutine = () => {
+    const savedRoutine = localStorage.getItem('weeklyRoutine');
+    if (!savedRoutine) {
+      return alert('トップページの「設定」タブから、固定シフトを登録してね！');
+    }
+    const routine = JSON.parse(savedRoutine);
+    const newAnswers = { ...answers };
+    let appliedCount = 0;
+
+    slots.forEach(slot => {
+      const dow = getFixedDate(slot.start_at).getDay();
+      if (routine[dow]) {
+        newAnswers[slot.id] = routine[dow];
+        appliedCount++;
+      }
+    });
+
+    setAnswers(newAnswers);
+    alert(`曜日固定シフトの設定を ${appliedCount} 件の日程に反映したよ！`);
+  };
+
   const applySmartCopy = () => {
     const newAnswers = { ...answers };
     let appliedCount = 0;
@@ -298,6 +319,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setLoading(false);
   };
 
+  // 💡 イベントを完全に削除する機能
+  const handleDeleteEvent = async () => {
+    if (!confirm('【警告】\n本当にこのイベントを完全に削除しますか？\n全員の回答データも消滅し、二度と復元できません！！')) return;
+    setLoading(true);
+    await supabase.from('events').delete().eq('id', eventId);
+    alert('イベントを完全に削除しました。');
+    window.location.href = '/'; // トップページに戻す
+  };
+
   const sortedAndFilteredSlots = useMemo(() => {
     let result = [...aggregated];
     if (hideBatsu) result = result.filter(s => s.batsu === 0);
@@ -324,10 +354,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const getStatusIcon = (s: string) => s === 'maru' ? '⭕️' : s === 'sankaku' ? '🔺' : s === 'batsu' ? '❌' : '-';
 
   if (loading) return <div className="text-center mt-20">読み込み中...</div>;
-  if (!event) return <div className="text-center mt-20 text-red-500 font-bold">イベントが見つかりません</div>;
+  if (!event) return <div className="text-center mt-20 text-red-500 font-bold">イベントが見つかりません（削除された可能性があります）</div>;
 
   const confirmedSlots = slots.filter(s => s.is_confirmed);
   const isEventConfirmed = confirmedSlots.length > 0;
+  
+  // 💡 このイベントの作成者（ホスト）かどうかを判定
+  const isHost = event.host_id === deviceGuestId;
 
   return (
     <div className="max-w-2xl mx-auto p-4 mt-4 space-y-6">
@@ -341,10 +374,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <div className="text-center mb-6">
-        {/* 💡 ダークモードの時は、少し明るくて見やすい「blue-400」にする！ */}
         <h1 className="text-3xl font-bold mb-2 text-gray-800 dark:text-blue-400">{event.title}</h1>
-        
-        {/* 💡 説明文はタイトルの青を邪魔しないように、ほんのり青みがかった明るいグレー（slate-300）にするのがおすすめ！ */}
         {event.description && <p className="text-gray-600 dark:text-slate-300 whitespace-pre-wrap">{event.description}</p>}
       </div>
 
@@ -388,14 +418,22 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力" />
           </div>
 
-          {Object.keys(pastAvailabilities).length > 0 && (
-            <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-100">
-              <p className="text-sm text-purple-800 font-bold mb-2">💡 クラウドの予定から推測できます</p>
-              <button onClick={applySmartCopy} className="w-full py-2 bg-purple-600 text-white text-sm font-bold rounded shadow hover:bg-purple-700 transition">
-                スマートコピーで一括入力
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+            {/* 💡 曜日シフトボタンを追加 */}
+            <button onClick={applyWeeklyRoutine} className="w-full flex items-center justify-center gap-2 py-3 bg-purple-50 hover:bg-purple-100 text-purple-700 text-sm font-bold rounded-lg border border-purple-200 shadow-sm transition">
+              <CalendarDays size={18} /> いつもの曜日シフトを反映
+            </button>
+            
+            {Object.keys(pastAvailabilities).length > 0 ? (
+              <button onClick={applySmartCopy} className="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-bold rounded-lg border border-blue-200 shadow-sm transition">
+                <History size={18} /> 他の予定からスマートコピー
               </button>
-            </div>
-          )}
+            ) : (
+              <div className="w-full flex items-center justify-center gap-2 py-3 bg-gray-50 text-gray-400 text-xs font-bold rounded-lg border border-gray-200">
+                <History size={16} /> 過去の予定はありません
+              </div>
+            )}
+          </div>
 
           <div className="space-y-3 mb-6 mt-4">
             {slots.map(slot => (
@@ -423,6 +461,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       )}
 
       {activeTab === 'result' && (
+        // ... (集計タブの中身は変更なし)
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow p-6 border-t-4 border-green-500 transition-all">
             <button 
@@ -521,6 +560,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
+      {/* 💡 マイ予定タブの中身 */}
       {activeTab === 'my-schedule' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
@@ -546,7 +586,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                           {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
                         </h3>
                       )}
-                      <Link href={`/event/${schedule.event_id}`} className="block bg-white border-2 border-yellow-300 p-4 rounded-xl hover:bg-yellow-50 active:bg-yellow-100 transition shadow-sm group">
+                      <div className="block bg-white border-2 border-yellow-300 p-4 rounded-xl shadow-sm">
                         <div className="flex justify-between items-center mb-2">
                           <div className="flex items-center gap-2">
                             <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
@@ -555,44 +595,35 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                             </span>
                           </div>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <p className="text-sm text-gray-700 font-bold truncate pr-4">{schedule.eventTitle}</p>
-                          <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
-                            調整画面へ <ChevronRight size={14} />
-                          </div>
-                        </div>
-                      </Link>
+                        <p className="text-sm text-gray-700 font-bold truncate pr-4">{schedule.eventTitle}</p>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
+        </div>
+      )}
 
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-400">
-            <div className="flex items-center gap-2 mb-6 text-blue-600">
-              <History size={24} />
-              <h2 className="text-xl font-bold">最近見た・調整中のイベント</h2>
-            </div>
-            {recentEvents.length === 0 ? (
-              <p className="text-center text-gray-500 py-6 bg-gray-50 rounded-lg font-bold">まだ履歴がありません。</p>
-            ) : (
-              <div className="space-y-3">
-                {recentEvents.map(re => (
-                  <Link key={re.id} href={`/event/${re.id}`} className="block bg-white border border-gray-200 p-4 rounded-xl hover:bg-blue-50 transition shadow-sm group">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-gray-800">{re.title}</span>
-                      <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
-                        開く <ChevronRight size={14} />
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
+      {/* 💡 ホスト専用の完全削除ボタン（ページの一番下） */}
+      {isHost && (
+        <div className="mt-12 pt-6 border-t border-red-200">
+          <div className="bg-red-50 p-6 rounded-xl border border-red-200 text-center">
+            <h3 className="text-red-800 font-bold mb-2 flex items-center justify-center gap-2">
+              <Trash2 size={20} /> イベントの完全削除 (作成者のみ)
+            </h3>
+            <p className="text-xs text-red-600 mb-4">このイベントを作った間違えや、終わった用事の場合はここで削除できます。全員の回答も消滅します。</p>
+            <button 
+              onClick={handleDeleteEvent}
+              className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm transition-colors"
+            >
+              本当にこのイベントを削除する
+            </button>
           </div>
         </div>
       )}
+
     </div>
   );
 }

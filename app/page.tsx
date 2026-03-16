@@ -35,10 +35,15 @@ export default function TopPage() {
   const [bulkStart, setBulkStart] = useState('12:00');
   const [bulkEnd, setBulkEnd] = useState('18:00');
   const [bulkInterval, setBulkInterval] = useState('120');
-  const [bulkIsAllDay, setBulkIsAllDay] = useState(false); // 💡 一括作成の終日フラグ
+  const [bulkIsAllDay, setBulkIsAllDay] = useState(false); 
 
   const [deviceGuestId, setDeviceGuestId] = useState('');
   const [transferIdInput, setTransferIdInput] = useState('');
+
+  // 💡 固定シフト用のState
+  const [routine, setRoutine] = useState<Record<number, string>>({
+    0: 'maru', 1: 'maru', 2: 'maru', 3: 'maru', 4: 'maru', 5: 'maru', 6: 'maru'
+  });
 
   const DOW_LABELS = [
     { label: '日', val: 0 }, { label: '月', val: 1 }, { label: '火', val: 2 },
@@ -57,6 +62,10 @@ export default function TopPage() {
       }
       setDeviceGuestId(currentGuestId);
       
+      // 💡 固定シフトの読み込み
+      const savedRoutine = localStorage.getItem('weeklyRoutine');
+      if (savedRoutine) setRoutine(JSON.parse(savedRoutine));
+
       fetchMySchedules(currentGuestId);
       fetchRecentEvents(currentGuestId);
     }
@@ -100,6 +109,15 @@ export default function TopPage() {
     setFetchingSchedules(false);
   };
 
+  // 💡 履歴から削除する処理
+  const removeRecentEvent = async (e: React.MouseEvent, eventId: string) => {
+    e.preventDefault(); // リンクへの移動を防ぐ
+    if (!confirm('このイベントを履歴から削除しますか？')) return;
+    
+    await supabase.from('user_recent_events').delete().eq('guest_id', deviceGuestId).eq('event_id', eventId);
+    setRecentEvents(prev => prev.filter(re => re.id !== eventId));
+  };
+
   const addSlot = () => setSlots([...slots, { startAt: '', endAt: '' }]);
   const removeSlot = (index: number) => setSlots(slots.filter((_, i) => i !== index));
 
@@ -110,6 +128,17 @@ export default function TopPage() {
   };
 
   const toggleDow = (val: number) => { setSelectedDows(prev => prev.includes(val) ? prev.filter(d => d !== val) : [...prev, val]); };
+
+  // 💡 固定シフトのサイクル切り替え
+  const cycleRoutine = (dow: number) => {
+    const current = routine[dow];
+    const next = current === 'maru' ? 'sankaku' : current === 'sankaku' ? 'batsu' : 'maru';
+    const newRoutine = { ...routine, [dow]: next };
+    setRoutine(newRoutine);
+    localStorage.setItem('weeklyRoutine', JSON.stringify(newRoutine));
+  };
+
+  const getStatusIcon = (s: string) => s === 'maru' ? '⭕️' : s === 'sankaku' ? '🔺' : '❌';
 
   const generateBulkSlots = () => {
     if (!bulkStartDate || !bulkEndDate || selectedDows.length === 0) return alert('期間と曜日を指定してね！');
@@ -127,7 +156,6 @@ export default function TopPage() {
       if (selectedDows.includes(currentDate.getDay())) {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
         
-        // 💡 終日の場合は 00:00〜23:59 で作成
         if (bulkIsAllDay) {
           newSlots.push({ startAt: `${dateStr}T00:00`, endAt: `${dateStr}T23:59` });
         } else {
@@ -257,7 +285,6 @@ export default function TopPage() {
                 ))}
               </div>
               
-              {/* 💡 一括作成にも終日設定を追加 */}
               <div className="flex items-center gap-2 mb-2">
                 <input type="checkbox" id="bulkAllDay" checked={bulkIsAllDay} onChange={e => setBulkIsAllDay(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
                 <label htmlFor="bulkAllDay" className="text-sm font-bold text-gray-700 cursor-pointer">時間を指定せず「終日」にする</label>
@@ -293,7 +320,6 @@ export default function TopPage() {
                 )}
               </div>
               
-              {/* 💡 終日チェックボックス付きの新しいスロットUI */}
               <div className="space-y-3">
                 {slots.map((slot, index) => {
                   const date = slot.startAt && slot.startAt.includes('T') ? slot.startAt.split('T')[0] : '';
@@ -308,7 +334,7 @@ export default function TopPage() {
                     if (field === 'startTime') s = value;
                     if (field === 'endTime') e = value;
                     if (field === 'isAllDay') allDay = value;
-                    if (!d) d = format(new Date(), 'yyyy-MM-dd'); // 日付が空なら今日をセット
+                    if (!d) d = format(new Date(), 'yyyy-MM-dd');
 
                     if (allDay) {
                       newSlots[index] = { startAt: `${d}T00:00`, endAt: `${d}T23:59` };
@@ -368,7 +394,6 @@ export default function TopPage() {
               <div className="space-y-4">
                 {mySchedules.map((schedule, i) => {
                   const isFirstOfDay = i === 0 || format(getFixedDate(mySchedules[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
-                  // 💡 終日判定
                   const sTime = format(getFixedDate(schedule.start_at), 'HH:mm');
                   const eTime = format(getFixedDate(schedule.end_at), 'HH:mm');
                   const isAllDay = sTime === '00:00' && eTime === '23:59';
@@ -413,13 +438,21 @@ export default function TopPage() {
             ) : (
               <div className="space-y-3">
                 {recentEvents.map(re => (
-                  <Link key={re.id} href={`/event/${re.id}`} className="block bg-white border border-gray-200 p-4 rounded-xl hover:bg-blue-50 transition shadow-sm group">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-gray-800">{re.title}</span>
-                      <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
+                  <Link key={re.id} href={`/event/${re.id}`} className="block bg-white border border-gray-200 p-4 rounded-xl hover:bg-blue-50 transition shadow-sm group relative">
+                    <div className="flex justify-between items-center pr-10">
+                      <span className="font-bold text-gray-800 truncate">{re.title}</span>
+                      <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition shrink-0">
                         開く <ChevronRight size={14} />
                       </div>
                     </div>
+                    {/* 💡 履歴削除ボタン */}
+                    <button 
+                      onClick={(e) => removeRecentEvent(e, re.id)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors z-10"
+                      title="履歴から削除"
+                    >
+                      <Trash2 size={18} />
+                    </button>
                   </Link>
                 ))}
               </div>
@@ -429,50 +462,80 @@ export default function TopPage() {
       )}
 
       {activeTab === 'settings' && (
-        <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-gray-500">
-          <div className="flex items-center gap-2 mb-6 text-gray-700">
-            <Settings size={24} />
-            <h2 className="text-xl font-bold">データ引き継ぎ設定</h2>
+        <div className="space-y-6">
+          {/* 💡 固定シフト設定パネル */}
+          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-purple-500">
+            <div className="flex items-center gap-2 mb-4 text-purple-600">
+              <CalendarDays size={24} />
+              <h2 className="text-xl font-bold">曜日ごとの固定シフト</h2>
+            </div>
+            <p className="text-sm text-gray-600 mb-6 bg-purple-50 p-4 rounded-lg border border-purple-100">
+              「月曜はバイトで❌」「火曜はヒマ⭕️」など、いつもの予定を登録しておくと、回答画面でワンタップで入力できます！
+            </p>
+            
+            <div className="grid grid-cols-7 gap-1 sm:gap-2">
+              {DOW_LABELS.map(dow => (
+                <div key={dow.val} className="flex flex-col items-center gap-2">
+                  <span className="text-xs font-bold text-gray-500">{dow.label}</span>
+                  <button 
+                    onClick={() => cycleRoutine(dow.val)}
+                    className={`w-full aspect-square flex items-center justify-center text-xl sm:text-2xl rounded-xl shadow-sm border transition-all active:scale-95
+                      ${routine[dow.val] === 'maru' ? 'bg-white border-green-200 text-green-600' : 
+                        routine[dow.val] === 'sankaku' ? 'bg-white border-orange-200 text-orange-500' : 
+                        'bg-gray-100 border-red-200 text-red-500 opacity-80'}`}
+                  >
+                    {getStatusIcon(routine[dow.val])}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <p className="text-sm text-gray-600 mb-6 bg-gray-50 p-4 rounded-lg border">
-            ホーム画面に追加したアプリ版や、別のブラウザで、現在のクラウドデータを完全に同期できます。
-          </p>
-
-          <div className="space-y-8">
-            <div>
-              <label className="block text-sm font-bold mb-2 text-blue-800">① 今のデータを引き継ぎたい場合</label>
-              <p className="text-xs text-gray-500 mb-2">下のIDをコピーして、引き継ぎ先のアプリで入力してください。</p>
-              <div className="flex gap-2">
-                <input readOnly value={deviceGuestId} className="flex-1 p-3 bg-gray-100 border rounded-lg text-xs text-gray-600 outline-none" />
-                <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(deviceGuestId); 
-                    alert('引き継ぎIDをコピーしました！\n引き継ぎ先のアプリを開いてペーストしてください。');
-                  }} 
-                  className="p-3 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300 transition shrink-0"
-                >
-                  コピー
-                </button>
-              </div>
+          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-gray-500">
+            <div className="flex items-center gap-2 mb-6 text-gray-700">
+              <Settings size={24} />
+              <h2 className="text-xl font-bold">データ引き継ぎ設定</h2>
             </div>
 
-            <div className="border-t pt-6">
-              <label className="block text-sm font-bold mb-2 text-green-800">② 別のデータをここに復元したい場合</label>
-              <p className="text-xs text-gray-500 mb-2">コピーした引き継ぎIDを下にペーストして復元ボタンを押してください。</p>
-              <div className="flex gap-2">
-                <input 
-                  value={transferIdInput} 
-                  onChange={e => setTransferIdInput(e.target.value)} 
-                  placeholder="引き継ぎIDをペースト" 
-                  className="flex-1 p-3 border border-gray-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-green-500" 
-                />
-                <button 
-                  onClick={handleTransfer} 
-                  className="p-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition shadow shrink-0"
-                >
-                  復元する
-                </button>
+            <p className="text-sm text-gray-600 mb-6 bg-gray-50 p-4 rounded-lg border">
+              ホーム画面に追加したアプリ版や、別のブラウザで、現在のクラウドデータを完全に同期できます。
+            </p>
+
+            <div className="space-y-8">
+              <div>
+                <label className="block text-sm font-bold mb-2 text-blue-800">① 今のデータを引き継ぎたい場合</label>
+                <p className="text-xs text-gray-500 mb-2">下のIDをコピーして、引き継ぎ先のアプリで入力してください。</p>
+                <div className="flex gap-2">
+                  <input readOnly value={deviceGuestId} className="flex-1 p-3 bg-gray-100 border rounded-lg text-xs text-gray-600 outline-none" />
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(deviceGuestId); 
+                      alert('引き継ぎIDをコピーしました！\n引き継ぎ先のアプリを開いてペーストしてください。');
+                    }} 
+                    className="p-3 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300 transition shrink-0"
+                  >
+                    コピー
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <label className="block text-sm font-bold mb-2 text-green-800">② 別のデータをここに復元したい場合</label>
+                <p className="text-xs text-gray-500 mb-2">コピーした引き継ぎIDを下にペーストして復元ボタンを押してください。</p>
+                <div className="flex gap-2">
+                  <input 
+                    value={transferIdInput} 
+                    onChange={e => setTransferIdInput(e.target.value)} 
+                    placeholder="引き継ぎIDをペースト" 
+                    className="flex-1 p-3 border border-gray-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-green-500" 
+                  />
+                  <button 
+                    onClick={handleTransfer} 
+                    className="p-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition shadow shrink-0"
+                  >
+                    復元する
+                  </button>
+                </div>
               </div>
             </div>
           </div>
