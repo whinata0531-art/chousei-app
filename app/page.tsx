@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Trash2, Link as LinkIcon, Share2, CalendarDays, History, CalendarCheck, ChevronRight, Settings } from 'lucide-react';
-import { addMinutes, format, addDays } from 'date-fns';
+import { Plus, Trash2, Link as LinkIcon, Share2, CalendarDays, History, CalendarCheck, ChevronRight, Settings, CheckCircle2, ArrowUp, X, Calendar as CalendarIcon, ChevronLeft, ChevronDown } from 'lucide-react';
+import { addMinutes, format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, isSameDay } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import Link from 'next/link';
 
@@ -11,16 +11,26 @@ type HistoryItem = { title: string; slots: { startAt: string; endAt: string }[] 
 type ConfirmedSchedule = { id: string; event_id: string; start_at: string; end_at: string; eventTitle: string };
 type RecentEvent = { id: string; title: string; lastAccessed: number };
 
-const getFixedDate = (dbDateStr: string) => {
-  return new Date(dbDateStr.substring(0, 16));
-};
+type TimeSlot = { id: string; start: string; end: string };
+type DayBlock = { id: string; date: string; isAllDay: boolean; isExpanded: boolean; times: TimeSlot[] };
+
+const getFixedDate = (dbDateStr: string) => new Date(dbDateStr.substring(0, 16));
 
 export default function TopPage() {
-  const [activeTab, setActiveTab] = useState<'create' | 'my-schedule' | 'settings'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'my-schedule'>('create');
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [slots, setSlots] = useState([{ startAt: '', endAt: '' }]);
+  
+  // 💡 初期状態も空っぽ（''）にする
+  const [dayBlocks, setDayBlocks] = useState<DayBlock[]>([
+    { id: crypto.randomUUID(), date: format(new Date(), 'yyyy-MM-dd'), isAllDay: false, isExpanded: true, times: [{ id: crypto.randomUUID(), start: '', end: '' }] }
+  ]);
+
+  const [dayMemory, setDayMemory] = useState<Record<string, { isAllDay: boolean; times: TimeSlot[] }>>({});
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(startOfMonth(new Date()));
+
   const [createdEventId, setCreatedEventId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hostHistory, setHostHistory] = useState<HistoryItem[]>([]);
@@ -38,12 +48,7 @@ export default function TopPage() {
   const [bulkIsAllDay, setBulkIsAllDay] = useState(false); 
 
   const [deviceGuestId, setDeviceGuestId] = useState('');
-  const [transferIdInput, setTransferIdInput] = useState('');
-
-  // 💡 固定シフト用のState
-  const [routine, setRoutine] = useState<Record<number, string>>({
-    0: 'maru', 1: 'maru', 2: 'maru', 3: 'maru', 4: 'maru', 5: 'maru', 6: 'maru'
-  });
+  const [showScrollTop, setShowScrollTop] = useState(false); 
 
   const DOW_LABELS = [
     { label: '日', val: 0 }, { label: '月', val: 1 }, { label: '火', val: 2 },
@@ -62,25 +67,18 @@ export default function TopPage() {
       }
       setDeviceGuestId(currentGuestId);
       
-      // 💡 固定シフトの読み込み
-      const savedRoutine = localStorage.getItem('weeklyRoutine');
-      if (savedRoutine) setRoutine(JSON.parse(savedRoutine));
-
       fetchMySchedules(currentGuestId);
       fetchRecentEvents(currentGuestId);
+
+      const handleScroll = () => setShowScrollTop(window.scrollY > 300);
+      window.addEventListener('scroll', handleScroll);
+      return () => window.removeEventListener('scroll', handleScroll);
     }
   }, []);
 
   const fetchRecentEvents = async (guestId: string) => {
-    const { data } = await supabase
-      .from('user_recent_events')
-      .select('*')
-      .eq('guest_id', guestId)
-      .order('accessed_at', { ascending: false })
-      .limit(10);
-    if (data) {
-      setRecentEvents(data.map((d: any) => ({ id: d.event_id, title: d.event_title, lastAccessed: d.accessed_at })));
-    }
+    const { data } = await supabase.from('user_recent_events').select('*').eq('guest_id', guestId).order('accessed_at', { ascending: false }).limit(10);
+    if (data) setRecentEvents(data.map((d: any) => ({ id: d.event_id, title: d.event_title, lastAccessed: d.accessed_at })));
   };
 
   const fetchMySchedules = async (guestId: string) => {
@@ -109,36 +107,124 @@ export default function TopPage() {
     setFetchingSchedules(false);
   };
 
-  // 💡 履歴から削除する処理
   const removeRecentEvent = async (e: React.MouseEvent, eventId: string) => {
-    e.preventDefault(); // リンクへの移動を防ぐ
+    e.preventDefault();
     if (!confirm('このイベントを履歴から削除しますか？')) return;
-    
     await supabase.from('user_recent_events').delete().eq('guest_id', deviceGuestId).eq('event_id', eventId);
     setRecentEvents(prev => prev.filter(re => re.id !== eventId));
   };
 
-  const addSlot = () => setSlots([...slots, { startAt: '', endAt: '' }]);
-  const removeSlot = (index: number) => setSlots(slots.filter((_, i) => i !== index));
+  const addDayBlock = (dateStr: string = format(new Date(), 'yyyy-MM-dd')) => {
+    const mem = dayMemory[dateStr];
+    const newBlock: DayBlock = { 
+      id: crypto.randomUUID(), date: dateStr, 
+      isAllDay: mem ? mem.isAllDay : false, isExpanded: true, 
+      // 💡 新規追加時は空っぽ（''）にする
+      times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }] 
+    };
+    setDayBlocks([...dayBlocks, newBlock].sort((a, b) => a.date.localeCompare(b.date)));
+  };
+
+  const removeDayBlock = (blockId: string) => {
+    const block = dayBlocks.find(b => b.id === blockId);
+    if (block) setDayMemory(prev => ({ ...prev, [block.date]: { isAllDay: block.isAllDay, times: block.times } }));
+    setDayBlocks(dayBlocks.filter(b => b.id !== blockId));
+  };
+
+  const updateDayBlockDate = (blockId: string, newDate: string) => {
+    setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, date: newDate } : b).sort((a, b) => a.date.localeCompare(b.date)));
+  };
+
+  const toggleDayExpanded = (blockId: string) => {
+    setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, isExpanded: !b.isExpanded } : b));
+  };
+
+  const toggleDayAllDay = (blockId: string, checked: boolean) => {
+    setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, isAllDay: checked } : b));
+  };
+
+  // 💡 時間を追加する時の2時間枠ロジック
+  const addTimeSlot = (blockId: string) => {
+    setDayBlocks(dayBlocks.map(b => {
+      if (b.id === blockId) {
+        const lastTime = b.times[b.times.length - 1];
+        let newStart = '12:00';
+        let newEnd = '14:00';
+        
+        // 💡 前の枠がちゃんと入力されていれば、その終了時間から2時間枠を作る！
+        if (lastTime && lastTime.end) {
+          newStart = lastTime.end;
+          try {
+            newEnd = format(addMinutes(new Date(`2000-01-01T${newStart}`), 120), 'HH:mm');
+          } catch (e) {
+            newEnd = '23:59'; // 計算エラー時はとりあえず23:59
+          }
+        }
+        return { ...b, times: [...b.times, { id: crypto.randomUUID(), start: newStart, end: newEnd }] };
+      }
+      return b;
+    }));
+  };
+
+  const removeTimeSlot = (blockId: string, timeId: string) => {
+    setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, times: b.times.filter(t => t.id !== timeId) } : b));
+  };
+
+  const updateTimeSlot = (blockId: string, timeId: string, field: keyof TimeSlot, value: any) => {
+    setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, times: b.times.map(t => t.id === timeId ? { ...t, [field]: value } : t) } : b));
+  };
+
+  const toggleCalendarDate = (dateStr: string) => {
+    const block = dayBlocks.find(b => b.date === dateStr);
+    if (block) {
+      setDayMemory(prev => ({ ...prev, [dateStr]: { isAllDay: block.isAllDay, times: block.times } }));
+      setDayBlocks(dayBlocks.filter(b => b.date !== dateStr));
+    } else {
+      const mem = dayMemory[dateStr];
+      const newBlock: DayBlock = {
+        id: crypto.randomUUID(), date: dateStr,
+        isAllDay: mem ? mem.isAllDay : false, isExpanded: true,
+        // 💡 ここも新規は空っぽにする
+        times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }]
+      };
+      const newBlocks = [...dayBlocks, newBlock];
+      newBlocks.sort((a, b) => a.date.localeCompare(b.date));
+      setDayBlocks(newBlocks);
+    }
+  };
+
+  const calendarDays = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
+  const firstDayOfWeek = calendarDays[0].getDay();
+  const paddingDays = Array.from({ length: firstDayOfWeek }).map((_, i) => i);
 
   const loadFromHistory = (index: string) => {
     if (index === '') return;
     const item = hostHistory[Number(index)];
-    if (item) { setSlots(item.slots); alert(`「${item.title}」の日程構成をコピーしたよ！`); }
+    if (item) {
+      const grouped: Record<string, { isAllDay: boolean, times: TimeSlot[] }> = {};
+      item.slots.forEach(s => {
+        const date = s.startAt.split('T')[0];
+        const start = s.startAt.split('T')[1].substring(0, 5);
+        const end = s.endAt.split('T')[1].substring(0, 5);
+        const isAllDay = start === '00:00' && end === '23:59';
+        
+        if (!grouped[date]) grouped[date] = { isAllDay: false, times: [] };
+        if (isAllDay) grouped[date].isAllDay = true;
+        else grouped[date].times.push({ id: crypto.randomUUID(), start, end });
+      });
+
+      const newBlocks = Object.keys(grouped).map(date => ({
+        id: crypto.randomUUID(), date, isAllDay: grouped[date].isAllDay, isExpanded: true,
+        times: grouped[date].times.length > 0 ? grouped[date].times : [{ id: crypto.randomUUID(), start: '', end: '' }]
+      }));
+      newBlocks.sort((a, b) => a.date.localeCompare(b.date));
+      setDayBlocks(newBlocks);
+      alert(`「${item.title}」の日程構成をコピーしたよ！`);
+    }
   };
 
   const toggleDow = (val: number) => { setSelectedDows(prev => prev.includes(val) ? prev.filter(d => d !== val) : [...prev, val]); };
-
-  // 💡 固定シフトのサイクル切り替え
-  const cycleRoutine = (dow: number) => {
-    const current = routine[dow];
-    const next = current === 'maru' ? 'sankaku' : current === 'sankaku' ? 'batsu' : 'maru';
-    const newRoutine = { ...routine, [dow]: next };
-    setRoutine(newRoutine);
-    localStorage.setItem('weeklyRoutine', JSON.stringify(newRoutine));
-  };
-
-  const getStatusIcon = (s: string) => s === 'maru' ? '⭕️' : s === 'sankaku' ? '🔺' : '❌';
+  const toggleEveryday = () => { if (selectedDows.length === 7) setSelectedDows([]); else setSelectedDows([0, 1, 2, 3, 4, 5, 6]); };
 
   const generateBulkSlots = () => {
     if (!bulkStartDate || !bulkEndDate || selectedDows.length === 0) return alert('期間と曜日を指定してね！');
@@ -149,59 +235,80 @@ export default function TopPage() {
     if (start > end) return alert('終了日は開始日より後に設定してね！');
 
     const interval = parseInt(bulkInterval);
-    const newSlots: { startAt: string; endAt: string }[] = [];
+    const newBlocks: DayBlock[] = [...dayBlocks];
 
     let currentDate = start;
     while (currentDate <= end) {
       if (selectedDows.includes(currentDate.getDay())) {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
-        
+        const existingBlock = newBlocks.find(b => b.date === dateStr);
+
         if (bulkIsAllDay) {
-          newSlots.push({ startAt: `${dateStr}T00:00`, endAt: `${dateStr}T23:59` });
+          if (existingBlock) { existingBlock.isAllDay = true; } 
+          else { newBlocks.push({ id: crypto.randomUUID(), date: dateStr, isAllDay: true, isExpanded: true, times: [{ id: crypto.randomUUID(), start: '', end: '' }] }); }
         } else {
+          const generatedTimes: TimeSlot[] = [];
           const dayStart = new Date(`${dateStr}T${bulkStart}`);
           const dayEnd = new Date(`${dateStr}T${bulkEnd}`);
           let currentSlot = dayStart;
           while (currentSlot < dayEnd) {
             const nextSlot = addMinutes(currentSlot, interval);
             if (nextSlot > dayEnd) break;
-            newSlots.push({ startAt: format(currentSlot, "yyyy-MM-dd'T'HH:mm"), endAt: format(nextSlot, "yyyy-MM-dd'T'HH:mm") });
+            generatedTimes.push({ id: crypto.randomUUID(), start: format(currentSlot, "HH:mm"), end: format(nextSlot, "HH:mm") });
             currentSlot = nextSlot;
+          }
+
+          if (existingBlock) {
+             // 💡 既存の空っぽ枠があれば消してから追加する
+             const validExistingTimes = existingBlock.times.filter(t => t.start && t.end);
+             existingBlock.times = [...validExistingTimes, ...generatedTimes];
+             existingBlock.isAllDay = false; 
+          } else {
+             const mem = dayMemory[dateStr];
+             const baseTimes = mem ? mem.times.filter(t => t.start && t.end) : [];
+             newBlocks.push({ id: crypto.randomUUID(), date: dateStr, isAllDay: false, isExpanded: true, times: [...baseTimes, ...generatedTimes] });
           }
         }
       }
       currentDate = addDays(currentDate, 1);
     }
 
-    if (newSlots.length === 0) return alert('条件に合う日がなかったよ😢');
-    setSlots((slots.length === 1 && !slots[0].startAt) ? newSlots : [...slots, ...newSlots]);
+    if (newBlocks.length === dayBlocks.length) return alert('条件に合う日がなかったよ😢');
+    newBlocks.sort((a, b) => a.date.localeCompare(b.date));
+    setDayBlocks(newBlocks.filter(b => b.date !== format(new Date(), 'yyyy-MM-dd') || b.times.some(t => t.start && t.end) || b.isAllDay));
   };
 
   const handleCreate = async () => {
-    if (!title || slots.some(s => !s.startAt || !s.endAt)) return alert('タイトルとすべての日程を入力してね！');
+    const flatSlotsToSubmit: { startAt: string, endAt: string }[] = [];
+    
+    dayBlocks.forEach(block => {
+      if (block.isAllDay) {
+        flatSlotsToSubmit.push({ startAt: `${block.date}T00:00`, endAt: `${block.date}T23:59` });
+      } else {
+        block.times.forEach(t => {
+          // 💡 ここで start と end の両方が入力されているものだけを抽出する！（誤爆防止）
+          if (t.start && t.end) {
+            flatSlotsToSubmit.push({ startAt: `${block.date}T${t.start}`, endAt: `${block.date}T${t.end}` });
+          }
+        });
+      }
+    });
+
+    // 空っぽの日程しかない場合はエラーにする
+    if (!title || flatSlotsToSubmit.length === 0) return alert('タイトルと、少なくとも1つの「有効な時間枠」を入力してね！');
     setLoading(true);
 
     const { data: eventData, error: eventError } = await supabase.from('events').insert([{ title, description, host_id: deviceGuestId }]).select('id').single();
     if (eventError || !eventData) { alert('エラーが発生しました'); setLoading(false); return; }
 
-    const slotsToInsert = slots.map(s => ({
-      event_id: eventData.id,
-      start_at: `${s.startAt}:00+00:00`, 
-      end_at: `${s.endAt}:00+00:00`,
-    }));
+    const slotsToInsert = flatSlotsToSubmit.map(s => ({ event_id: eventData.id, start_at: `${s.startAt}:00+00:00`, end_at: `${s.endAt}:00+00:00` }));
 
     await supabase.from('slots').insert(slotsToInsert);
-    const updatedHistory = [{ title, slots }, ...hostHistory.filter(h => h.title !== title)].slice(0, 5);
+    const updatedHistory = [{ title, slots: flatSlotsToSubmit }, ...hostHistory.filter(h => h.title !== title)].slice(0, 5);
     localStorage.setItem('hostEventHistory', JSON.stringify(updatedHistory));
     setHostHistory(updatedHistory);
 
-    await supabase.from('user_recent_events').upsert({
-      guest_id: deviceGuestId,
-      event_id: eventData.id,
-      event_title: title,
-      accessed_at: Date.now()
-    }, { onConflict: 'guest_id,event_id' });
-    
+    await supabase.from('user_recent_events').upsert({ guest_id: deviceGuestId, event_id: eventData.id, event_title: title, accessed_at: Date.now() }, { onConflict: 'guest_id,event_id' });
     await fetchRecentEvents(deviceGuestId);
 
     setCreatedEventId(eventData.id);
@@ -214,16 +321,10 @@ export default function TopPage() {
     } else { alert('URLをコピーしてね！'); }
   };
 
-  const handleTransfer = () => {
-    if (transferIdInput.length < 20) {
-      return alert('正しい引き継ぎIDを入力してください！');
-    }
-    if (confirm('現在のデータに上書きして引き継ぎますか？')) {
-      localStorage.setItem('deviceGuestId', transferIdInput.trim());
-      alert('データの引き継ぎが完了しました！画面を再読み込みします。');
-      window.location.reload();
-    }
-  };
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // 💡 有効な枠（時間が入力されている枠）だけをカウントする
+  const totalSlotsCount = dayBlocks.reduce((acc, block) => acc + (block.isAllDay ? 1 : block.times.filter(t => t.start && t.end).length), 0);
 
   if (createdEventId) {
     const eventUrl = `${window.location.origin}/event/${createdEventId}`;
@@ -246,56 +347,63 @@ export default function TopPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto p-4 mt-6 space-y-6">
-      <div className="flex bg-gray-200 rounded-lg p-1 shadow">
-        <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'create' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-          🗓 作成
+    <div className="max-w-xl mx-auto p-4 mt-6 space-y-6 pb-20">
+      <div className="flex justify-between items-center px-1 mb-2">
+        <h1 className="text-2xl font-extrabold text-gray-800 dark:text-gray-100 tracking-tight">📝 最強調整</h1>
+        <Link href="/settings" className="flex items-center gap-1 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm border border-gray-200 dark:border-gray-700">
+          <Settings size={16} /> 設定
+        </Link>
+      </div>
+
+      <div className="flex bg-gray-200 dark:bg-gray-800 rounded-lg p-1 shadow">
+        <button onClick={() => setActiveTab('create')} className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${activeTab === 'create' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}>
+          🗓 イベント作成
         </button>
-        <button onClick={() => setActiveTab('my-schedule')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'my-schedule' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-          📅 マイ予定
-        </button>
-        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-md transition-all ${activeTab === 'settings' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
-          ⚙️ 設定
+        <button onClick={() => setActiveTab('my-schedule')} className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${activeTab === 'my-schedule' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}>
+          📅 マイ予定・履歴
         </button>
       </div>
 
       {activeTab === 'create' && (
-        <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-500">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-blue-500">
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-bold mb-1">イベント名 *</label>
-              <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 border rounded" placeholder="例: BNS合同練習" />
+              <label className="block text-sm font-bold mb-1 dark:text-gray-300">イベント名 *</label>
+              <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例: BNS合同練習" />
             </div>
             
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 space-y-3">
-              <label className="block text-sm font-bold flex items-center gap-1 text-blue-800">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800/30 space-y-3">
+              <label className="block text-sm font-bold flex items-center gap-1 text-blue-800 dark:text-blue-300">
                 <CalendarDays size={16} /> 期間と曜日で一括作成
               </label>
               <div className="flex items-center gap-2">
-                <input type="date" value={bulkStartDate} onChange={e => setBulkStartDate(e.target.value)} className="p-2 border rounded text-sm flex-1" />
+                <input type="date" value={bulkStartDate} onChange={e => setBulkStartDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
                 <span className="text-gray-500">〜</span>
-                <input type="date" value={bulkEndDate} onChange={e => setBulkEndDate(e.target.value)} className="p-2 border rounded text-sm flex-1" />
+                <input type="date" value={bulkEndDate} onChange={e => setBulkEndDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap items-center">
                 {DOW_LABELS.map(dow => (
                   <button key={dow.val} onClick={() => toggleDow(dow.val)}
-                    className={`w-10 h-10 rounded-full font-bold text-sm border ${selectedDows.includes(dow.val) ? 'bg-blue-500 text-white' : 'bg-white'}`}>
+                    className={`w-10 h-10 rounded-full font-bold text-sm border transition-colors ${selectedDows.includes(dow.val) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
                     {dow.label}
                   </button>
                 ))}
+                <button onClick={toggleEveryday} className={`ml-2 px-3 py-2 rounded-full font-bold text-sm border transition-colors ${selectedDows.length === 7 ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 dark:border-gray-700'}`}>
+                  毎日
+                </button>
               </div>
               
               <div className="flex items-center gap-2 mb-2">
                 <input type="checkbox" id="bulkAllDay" checked={bulkIsAllDay} onChange={e => setBulkIsAllDay(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
-                <label htmlFor="bulkAllDay" className="text-sm font-bold text-gray-700 cursor-pointer">時間を指定せず「終日」にする</label>
+                <label htmlFor="bulkAllDay" className="text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">時間を指定せず「終日」にする</label>
               </div>
 
               {!bulkIsAllDay && (
-                <div className="flex items-center gap-2 bg-white p-2 rounded border">
-                  <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="p-1 border-b text-sm flex-1" />
+                <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700">
+                  <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
                   <span className="text-gray-500">〜</span>
-                  <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="p-1 border-b text-sm flex-1" />
-                  <select value={bulkInterval} onChange={e => setBulkInterval(e.target.value)} className="p-1 border-l pl-2 text-sm flex-1 text-gray-600">
+                  <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
+                  <select value={bulkInterval} onChange={e => setBulkInterval(e.target.value)} className="p-1 border-l dark:border-gray-600 pl-2 text-sm flex-1 text-gray-600 dark:text-gray-300 dark:bg-gray-800 outline-none">
                     <option value="60">60分枠</option>
                     <option value="90">90分枠</option>
                     <option value="120">2時間枠</option>
@@ -303,124 +411,174 @@ export default function TopPage() {
                   </select>
                 </div>
               )}
-              <button onClick={generateBulkSlots} className="w-full py-2 bg-blue-600 text-white font-bold rounded shadow-sm hover:bg-blue-700 transition">枠を追加する</button>
+              <button onClick={generateBulkSlots} className="w-full py-2 bg-blue-600 text-white font-bold rounded shadow-sm hover:bg-blue-700 transition">条件に合う枠を一気に追加する</button>
+            </div>
+
+            <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-200 dark:border-green-800/30 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="text-green-800 dark:text-green-400 font-bold">
+                有効な候補日程: <span className="text-xl">{totalSlotsCount}</span> 枠
+              </div>
+              <button onClick={handleCreate} disabled={loading || totalSlotsCount === 0 || !title} className={`w-full sm:w-auto px-8 py-3 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 ${totalSlotsCount > 0 && title ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>
+                <CheckCircle2 size={20} />
+                {loading ? '作成中...' : 'イベントを作成する'}
+              </button>
             </div>
 
             <div>
-              <div className="flex justify-between items-end mb-2">
-                <label className="block text-sm font-bold">候補日程 *</label>
+              <div className="flex justify-between items-end mb-4 border-b dark:border-gray-700 pb-2">
+                <h3 className="font-bold text-lg dark:text-gray-100">個別の日程調整</h3>
                 {hostHistory.length > 0 && (
-                  <div className="flex items-center gap-1 text-xs text-purple-600">
+                  <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
                     <History size={14} />
-                    <select onChange={(e) => { loadFromHistory(e.target.value); e.target.value = ""; }} className="bg-purple-50 border rounded p-1 max-w-[150px]">
-                      <option value="">過去の調整からコピー</option>
+                    <select onChange={(e) => { loadFromHistory(e.target.value); e.target.value = ""; }} className="bg-purple-50 dark:bg-purple-900/30 border dark:border-purple-800/50 rounded p-1 max-w-[150px] outline-none">
+                      <option value="">過去からコピー</option>
                       {hostHistory.map((h, i) => <option key={i} value={i}>{h.title}</option>)}
                     </select>
                   </div>
                 )}
               </div>
               
-              <div className="space-y-3">
-                {slots.map((slot, index) => {
-                  const date = slot.startAt && slot.startAt.includes('T') ? slot.startAt.split('T')[0] : '';
-                  const startTime = slot.startAt && slot.startAt.includes('T') ? slot.startAt.split('T')[1].substring(0, 5) : '12:00';
-                  const endTime = slot.endAt && slot.endAt.includes('T') ? slot.endAt.split('T')[1].substring(0, 5) : '18:00';
-                  const isAllDay = startTime === '00:00' && endTime === '23:59';
+              <div className="mb-6">
+                <button 
+                  onClick={() => setShowCalendar(!showCalendar)} 
+                  className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold border transition-colors ${showCalendar ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800/50 text-blue-600 dark:text-blue-400' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                >
+                  <CalendarIcon size={18} /> {showCalendar ? 'カレンダーを閉じる' : 'カレンダーから日付を追加する'}
+                </button>
 
-                  const updateSlot = (field: string, value: any) => {
-                    const newSlots = [...slots];
-                    let d = date; let s = startTime; let e = endTime; let allDay = isAllDay;
-                    if (field === 'date') d = value;
-                    if (field === 'startTime') s = value;
-                    if (field === 'endTime') e = value;
-                    if (field === 'isAllDay') allDay = value;
-                    if (!d) d = format(new Date(), 'yyyy-MM-dd');
+                {showCalendar && (
+                  <div className="mt-3 p-4 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm animate-fade-in">
+                    <div className="flex justify-between items-center mb-4 px-2">
+                      <button onClick={() => setCalendarMonth(subMonths(calendarMonth, 1))} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full dark:text-gray-200"><ChevronLeft size={20}/></button>
+                      <span className="font-bold dark:text-gray-100">{format(calendarMonth, 'yyyy年 M月')}</span>
+                      <button onClick={() => setCalendarMonth(addMonths(calendarMonth, 1))} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full dark:text-gray-200"><ChevronRight size={20}/></button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 text-center text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">
+                      {['日', '月', '火', '水', '木', '金', '土'].map(d => <div key={d}>{d}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {paddingDays.map(d => <div key={`pad-${d}`}></div>)}
+                      {calendarDays.map(d => {
+                        const dateStr = format(d, 'yyyy-MM-dd');
+                        const isSelected = dayBlocks.some(b => b.date === dateStr);
+                        const isToday = isSameDay(d, new Date());
+                        return (
+                          <button
+                            key={dateStr}
+                            onClick={() => toggleCalendarDate(dateStr)}
+                            className={`aspect-square flex items-center justify-center rounded-full text-sm transition-colors ${isSelected ? 'bg-blue-500 text-white font-bold shadow-md transform scale-105' : isToday ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-blue-200 dark:border-blue-800/50' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                          >
+                            {format(d, 'd')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-center text-gray-500 dark:text-gray-400 mt-4">日付をタップすると、その日のブロックが追加/削除されます</p>
+                  </div>
+                )}
+              </div>
 
-                    if (allDay) {
-                      newSlots[index] = { startAt: `${d}T00:00`, endAt: `${d}T23:59` };
-                    } else {
-                      if (s === '00:00' && e === '23:59') { s = '12:00'; e = '18:00'; }
-                      newSlots[index] = { startAt: `${d}T${s}`, endAt: `${d}T${e}` };
-                    }
-                    setSlots(newSlots);
-                  };
-
-                  return (
-                    <div key={index} className="flex flex-col gap-2 bg-gray-50 p-3 rounded-xl border border-gray-200 relative">
-                      <button onClick={() => removeSlot(index)} className="absolute top-3 right-3 text-red-400 hover:text-red-600 transition"><Trash2 size={18} /></button>
-                      <div className="flex items-center gap-3 pr-8">
-                        <input type="date" value={date} onChange={e => updateSlot('date', e.target.value)} className="p-2 border rounded-lg text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none" />
-                        <label className="flex items-center gap-1 text-sm font-bold text-gray-600 cursor-pointer bg-white px-2 py-1 rounded border">
-                          <input type="checkbox" checked={isAllDay} onChange={e => updateSlot('isAllDay', e.target.checked)} className="w-4 h-4" />
+              <div className="space-y-4">
+                {dayBlocks.map((block) => (
+                  <div key={block.id} className="border dark:border-gray-700 rounded-xl overflow-hidden shadow-sm bg-white dark:bg-gray-800 transition-all hover:border-blue-300 dark:hover:border-blue-700">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 px-4 py-3 border-b dark:border-gray-700 flex justify-between items-center transition-colors">
+                      <div className="flex items-center gap-2 flex-1">
+                        <button onClick={() => toggleDayExpanded(block.id)} className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800 rounded text-blue-600 dark:text-blue-400">
+                          {block.isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                        </button>
+                        <input type="date" value={block.date} onChange={e => updateDayBlockDate(block.id, e.target.value)} className="font-bold text-blue-800 dark:text-blue-300 bg-transparent border-none outline-none focus:ring-0 cursor-pointer w-32" />
+                        <span className="text-sm font-bold text-blue-600 dark:text-blue-400 hidden sm:inline">({format(new Date(block.date || new Date()), 'E', { locale: ja })})</span>
+                        
+                        <label className="ml-2 flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white/50 dark:bg-gray-800 px-2 py-1 rounded border border-blue-200 dark:border-blue-800/50">
+                          <input type="checkbox" checked={block.isAllDay} onChange={e => toggleDayAllDay(block.id, e.target.checked)} className="w-3 h-3 text-blue-600" />
                           終日
                         </label>
                       </div>
-                      {!isAllDay && (
-                        <div className="flex items-center gap-2">
-                          <input type="time" value={startTime} onChange={e => updateSlot('startTime', e.target.value)} className="p-2 border rounded-lg text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none" />
-                          <span className="text-gray-400">〜</span>
-                          <input type="time" value={endTime} onChange={e => updateSlot('endTime', e.target.value)} className="p-2 border rounded-lg text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none" />
-                        </div>
-                      )}
+                      <button onClick={() => removeDayBlock(block.id)} className="text-red-400 hover:text-red-600 transition p-1"><Trash2 size={18} /></button>
                     </div>
-                  );
-                })}
+                    
+                    {block.isExpanded && (
+                      <div className="p-3 bg-white dark:bg-gray-800">
+                        {block.isAllDay ? (
+                          <div className="text-center py-4 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 text-blue-600 dark:text-blue-400 font-bold text-sm">
+                            🌟 終日 (0:00〜23:59) で設定されています
+                            <p className="text-xs text-gray-400 font-normal mt-1">※チェックを外すと記憶していた個別の時間枠に戻ります</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {block.times.length === 0 ? (
+                              <p className="text-xs text-gray-400 text-center py-2">時間が設定されていません</p>
+                            ) : (
+                              block.times.map((time) => (
+                                <div key={time.id} className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 p-2 rounded-lg border dark:border-gray-700 group">
+                                  <div className="flex items-center gap-2 flex-1 pl-2">
+                                    {/* 💡 ここが空（''）の時はプレースホルダーが見えるように */}
+                                    <input type="time" value={time.start} onChange={e => updateTimeSlot(block.id, time.id, 'start', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500" />
+                                    <span className="text-gray-400 text-xs">〜</span>
+                                    <input type="time" value={time.end} onChange={e => updateTimeSlot(block.id, time.id, 'end', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500" />
+                                  </div>
+                                  <button onClick={() => removeTimeSlot(block.id, time.id)} className="text-gray-300 hover:text-red-500 p-1"><X size={16}/></button>
+                                </div>
+                              ))
+                            )}
+                            <button onClick={() => addTimeSlot(block.id)} className="w-full py-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-100 dark:border-blue-800/30 rounded-lg transition-colors flex items-center justify-center gap-1 mt-2">
+                              <Plus size={16} /> この日に時間を追加
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-              <button onClick={addSlot} className="flex items-center justify-center w-full gap-1 text-sm text-gray-500 mt-3 border-2 border-dashed border-gray-300 py-3 rounded-xl hover:bg-gray-50 transition"><Plus size={16} /> 新しい枠を追加</button>
-            </div>
 
-            <button onClick={handleCreate} disabled={loading} className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-xl mt-6 shadow-md transition">
-              {loading ? '作成中...' : 'イベントを作成する'}
-            </button>
+              {dayBlocks.length === 0 && (
+                <div className="mt-4 text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                  <p className="text-gray-500 dark:text-gray-400 font-bold mb-2">日付がありません</p>
+                  <button onClick={() => addDayBlock()} className="px-4 py-2 bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-lg shadow-sm border dark:border-gray-600">今日を追加する</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {activeTab === 'my-schedule' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
-            <div className="flex items-center gap-2 mb-6 text-yellow-600">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
+            <div className="flex items-center gap-2 mb-6 text-yellow-600 dark:text-yellow-500">
               <CalendarCheck size={24} />
-              <h2 className="text-xl font-bold">あなたが参加する確定予定</h2>
+              <h2 className="text-xl font-bold dark:text-gray-100">あなたが参加する確定予定</h2>
             </div>
             
             {fetchingSchedules ? (
               <p className="text-center text-gray-500 py-10">読み込み中...</p>
             ) : mySchedules.length === 0 ? (
-              <div className="text-center py-6 bg-gray-50 rounded-lg">
+              <div className="text-center py-6 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <p className="text-gray-500 font-bold">まだ確定した予定はありません。</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {mySchedules.map((schedule, i) => {
                   const isFirstOfDay = i === 0 || format(getFixedDate(mySchedules[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
-                  const sTime = format(getFixedDate(schedule.start_at), 'HH:mm');
-                  const eTime = format(getFixedDate(schedule.end_at), 'HH:mm');
-                  const isAllDay = sTime === '00:00' && eTime === '23:59';
-
                   return (
                     <div key={schedule.id}>
                       {isFirstOfDay && (
-                        <h3 className="text-sm font-bold text-gray-500 mb-2 mt-4 border-b pb-1">
+                        <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 mt-4 border-b dark:border-gray-700 pb-1">
                           {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
                         </h3>
                       )}
-                      <Link href={`/event/${schedule.event_id}`} className="block bg-white border-2 border-yellow-300 p-4 rounded-xl hover:bg-yellow-50 active:bg-yellow-100 transition shadow-sm group">
+                      <div className="block bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-600 p-4 rounded-xl shadow-sm">
                         <div className="flex justify-between items-center mb-2">
                           <div className="flex items-center gap-2">
                             <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
-                            <span className="font-extrabold text-lg text-gray-800">
-                              {isAllDay ? '終日' : `${sTime} 〜 ${eTime}`}
+                            <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100">
+                              {format(getFixedDate(schedule.start_at), 'HH:mm')} 〜 {format(getFixedDate(schedule.end_at), 'HH:mm')}
                             </span>
                           </div>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <p className="text-sm text-gray-700 font-bold truncate pr-4">{schedule.eventTitle}</p>
-                          <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition">
-                            調整画面へ <ChevronRight size={14} />
-                          </div>
-                        </div>
-                      </Link>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
+                      </div>
                     </div>
                   );
                 })}
@@ -428,31 +586,20 @@ export default function TopPage() {
             )}
           </div>
 
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-blue-400">
-            <div className="flex items-center gap-2 mb-6 text-blue-600">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-blue-400">
+            <div className="flex items-center gap-2 mb-6 text-blue-600 dark:text-blue-400">
               <History size={24} />
-              <h2 className="text-xl font-bold">最近見た・調整中のイベント</h2>
+              <h2 className="text-xl font-bold dark:text-gray-100">最近見た・調整中のイベント</h2>
             </div>
-            {recentEvents.length === 0 ? (
-              <p className="text-center text-gray-500 py-6 bg-gray-50 rounded-lg font-bold">まだ履歴がありません。</p>
-            ) : (
+            {recentEvents.length === 0 ? <p className="text-center text-gray-500 py-6 bg-gray-50 dark:bg-gray-800 rounded-lg font-bold">まだ履歴がありません。</p> : (
               <div className="space-y-3">
                 {recentEvents.map(re => (
-                  <Link key={re.id} href={`/event/${re.id}`} className="block bg-white border border-gray-200 p-4 rounded-xl hover:bg-blue-50 transition shadow-sm group relative">
+                  <Link key={re.id} href={`/event/${re.id}`} className="block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 rounded-xl hover:bg-blue-50 dark:hover:bg-gray-700 transition shadow-sm group relative">
                     <div className="flex justify-between items-center pr-10">
-                      <span className="font-bold text-gray-800 truncate">{re.title}</span>
-                      <div className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-lg group-hover:bg-blue-100 transition shrink-0">
-                        開く <ChevronRight size={14} />
-                      </div>
+                      <span className="font-bold text-gray-800 dark:text-gray-100 truncate">{re.title}</span>
+                      <div className="flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/50 px-3 py-2 rounded-lg transition shrink-0">開く <ChevronRight size={14} /></div>
                     </div>
-                    {/* 💡 履歴削除ボタン */}
-                    <button 
-                      onClick={(e) => removeRecentEvent(e, re.id)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors z-10"
-                      title="履歴から削除"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    <button onClick={(e) => removeRecentEvent(e, re.id)} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-red-500 transition-colors z-10" title="履歴から削除"><Trash2 size={18} /></button>
                   </Link>
                 ))}
               </div>
@@ -461,85 +608,10 @@ export default function TopPage() {
         </div>
       )}
 
-      {activeTab === 'settings' && (
-        <div className="space-y-6">
-          {/* 💡 固定シフト設定パネル */}
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-purple-500">
-            <div className="flex items-center gap-2 mb-4 text-purple-600">
-              <CalendarDays size={24} />
-              <h2 className="text-xl font-bold">曜日ごとの固定シフト</h2>
-            </div>
-            <p className="text-sm text-gray-600 mb-6 bg-purple-50 p-4 rounded-lg border border-purple-100">
-              「月曜はバイトで❌」「火曜はヒマ⭕️」など、いつもの予定を登録しておくと、回答画面でワンタップで入力できます！
-            </p>
-            
-            <div className="grid grid-cols-7 gap-1 sm:gap-2">
-              {DOW_LABELS.map(dow => (
-                <div key={dow.val} className="flex flex-col items-center gap-2">
-                  <span className="text-xs font-bold text-gray-500">{dow.label}</span>
-                  <button 
-                    onClick={() => cycleRoutine(dow.val)}
-                    className={`w-full aspect-square flex items-center justify-center text-xl sm:text-2xl rounded-xl shadow-sm border transition-all active:scale-95
-                      ${routine[dow.val] === 'maru' ? 'bg-white border-green-200 text-green-600' : 
-                        routine[dow.val] === 'sankaku' ? 'bg-white border-orange-200 text-orange-500' : 
-                        'bg-gray-100 border-red-200 text-red-500 opacity-80'}`}
-                  >
-                    {getStatusIcon(routine[dow.val])}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-gray-500">
-            <div className="flex items-center gap-2 mb-6 text-gray-700">
-              <Settings size={24} />
-              <h2 className="text-xl font-bold">データ引き継ぎ設定</h2>
-            </div>
-
-            <p className="text-sm text-gray-600 mb-6 bg-gray-50 p-4 rounded-lg border">
-              ホーム画面に追加したアプリ版や、別のブラウザで、現在のクラウドデータを完全に同期できます。
-            </p>
-
-            <div className="space-y-8">
-              <div>
-                <label className="block text-sm font-bold mb-2 text-blue-800">① 今のデータを引き継ぎたい場合</label>
-                <p className="text-xs text-gray-500 mb-2">下のIDをコピーして、引き継ぎ先のアプリで入力してください。</p>
-                <div className="flex gap-2">
-                  <input readOnly value={deviceGuestId} className="flex-1 p-3 bg-gray-100 border rounded-lg text-xs text-gray-600 outline-none" />
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(deviceGuestId); 
-                      alert('引き継ぎIDをコピーしました！\n引き継ぎ先のアプリを開いてペーストしてください。');
-                    }} 
-                    className="p-3 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300 transition shrink-0"
-                  >
-                    コピー
-                  </button>
-                </div>
-              </div>
-
-              <div className="border-t pt-6">
-                <label className="block text-sm font-bold mb-2 text-green-800">② 別のデータをここに復元したい場合</label>
-                <p className="text-xs text-gray-500 mb-2">コピーした引き継ぎIDを下にペーストして復元ボタンを押してください。</p>
-                <div className="flex gap-2">
-                  <input 
-                    value={transferIdInput} 
-                    onChange={e => setTransferIdInput(e.target.value)} 
-                    placeholder="引き継ぎIDをペースト" 
-                    className="flex-1 p-3 border border-gray-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-green-500" 
-                  />
-                  <button 
-                    onClick={handleTransfer} 
-                    className="p-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition shadow shrink-0"
-                  >
-                    復元する
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {showScrollTop && (
+        <button onClick={scrollToTop} className="fixed bottom-6 right-6 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all z-50 animate-fade-in-up">
+          <ArrowUp size={24} />
+        </button>
       )}
     </div>
   );
