@@ -3,9 +3,49 @@
 import { useState, useEffect } from 'react';
 import { Settings, CalendarDays, ArrowLeft, Trash2, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+// 💡 さっき作ったボタンをインポート！（もしパスが違ったら直してね！）
+import GoogleLoginButton from '@/app/components/GoogleLoginButton';
 
 type RoutineSlot = { id: string; isAllDay: boolean; start: string; end: string; status: 'maru' | 'sankaku' | 'batsu' };
 type WeeklyRoutine = Record<number, RoutineSlot[]>;
+
+// 💡 新しく追加：開け閉めできるアコーディオンの部品！
+// 元のデザイン（上のボーダー色とかアイコン）をそのまま引き継げるように工夫したよ！
+function AccordionItem({ 
+  title, 
+  icon, 
+  borderColorClass, 
+  children 
+}: { 
+  title: string, 
+  icon: React.ReactNode, 
+  borderColorClass: string, 
+  children: React.ReactNode 
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className={`bg-white dark:bg-gray-900 rounded-xl shadow-md border-t-4 ${borderColorClass} overflow-hidden`}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex justify-between items-center p-6 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+      >
+        <div className="flex items-center gap-2 text-gray-800 dark:text-gray-100">
+          {icon}
+          <h2 className="text-xl font-bold">{title}</h2>
+        </div>
+        <span className="text-gray-400 font-bold">{isOpen ? '▲' : '▼'}</span>
+      </button>
+      
+      {/* 開いている時だけ中身を表示 */}
+      {isOpen && (
+        <div className="px-6 pb-6 pt-0">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -16,7 +56,6 @@ export default function SettingsPage() {
     0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []
   });
 
-  // 💡 終日チェックを外した時に元に戻すためのメモリ！
   const [routineMemory, setRoutineMemory] = useState<Record<number, RoutineSlot[]>>({});
 
   const DOW_LABELS = [
@@ -50,22 +89,17 @@ export default function SettingsPage() {
     localStorage.setItem('weeklyRoutine', JSON.stringify(newRoutine));
   };
 
-  // 💡 その曜日が「終日モード」かどうかを判定
   const isDowAllDay = (dow: number) => {
     const slots = routine[dow];
     return slots && slots.length === 1 && slots[0].isAllDay;
   };
 
-  // 💡 終日モードの切り替え処理
   const toggleDowAllDay = (dow: number, checked: boolean) => {
     if (checked) {
-      // 今の個別枠を記憶しておく
       setRoutineMemory(prev => ({ ...prev, [dow]: routine[dow] }));
-      // 終日用の特別な1枠だけにする
       const allDaySlot: RoutineSlot = { id: crypto.randomUUID(), isAllDay: true, start: '', end: '', status: 'maru' };
       saveRoutine({ ...routine, [dow]: [allDaySlot] });
     } else {
-      // 記憶から復元する（なければ空にする）
       const mem = routineMemory[dow];
       saveRoutine({ ...routine, [dow]: mem && mem.length > 0 ? mem : [] });
     }
@@ -95,7 +129,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-xl mx-auto p-4 mt-6 space-y-8 pb-20">
+    <div className="max-w-xl mx-auto p-4 mt-6 space-y-6 pb-20">
       <div className="flex items-center justify-between border-b dark:border-gray-700 pb-4 sticky top-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md z-10 pt-2">
         <div className="flex items-center gap-3">
           <button onClick={() => router.back()} className="p-2 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-full transition shadow-sm">
@@ -105,11 +139,12 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-purple-500">
-        <div className="flex items-center gap-2 mb-4 text-purple-600 dark:text-purple-400">
-          <CalendarDays size={24} />
-          <h2 className="text-xl font-bold dark:text-gray-100">曜日ごとの固定シフト</h2>
-        </div>
+      {/* 📦 アコーディオン1：固定シフト設定 */}
+      <AccordionItem 
+        title="曜日ごとの固定シフト" 
+        icon={<CalendarDays className="text-purple-600 dark:text-purple-400" size={24} />}
+        borderColorClass="border-purple-500"
+      >
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-100 dark:border-purple-800/30">
           「月曜の14-16時は⭕️、20-24時は🔺」のように、いつもの予定を登録しておくと、回答画面でワンタップで一気に自動入力できます！
         </p>
@@ -120,13 +155,11 @@ export default function SettingsPage() {
               <div className={`bg-gray-100 dark:bg-gray-800 px-4 py-3 font-bold ${dow.color} border-b dark:border-gray-700 flex justify-between items-center`}>
                 <div className="flex items-center gap-3">
                   <span>{dow.label}</span>
-                  {/* 💡 曜日ごとの終日チェックボックス！ */}
                   <label className="flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white/50 dark:bg-gray-700 px-2 py-1 rounded border border-blue-200 dark:border-blue-800/50">
                     <input type="checkbox" checked={isDowAllDay(dow.val)} onChange={e => toggleDowAllDay(dow.val, e.target.checked)} className="w-3 h-3 text-blue-600" />
                     終日
                   </label>
                 </div>
-                {/* 終日モードの時は「枠を追加」ボタンを隠す */}
                 {!isDowAllDay(dow.val) && (
                   <button onClick={() => addSlot(dow.val)} className="text-xs flex items-center gap-1 bg-white dark:bg-gray-700 border dark:border-gray-600 px-2 py-1 rounded text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 shadow-sm transition">
                     <Plus size={14}/> 枠を追加
@@ -136,7 +169,6 @@ export default function SettingsPage() {
               
               <div className="p-3 bg-white dark:bg-gray-900">
                 {isDowAllDay(dow.val) ? (
-                  // 💡 終日モードの時のスッキリUI！
                   <div className="text-center py-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
                     <div className="text-blue-600 dark:text-blue-400 font-bold text-sm">
                       🌟 終日 (0:00〜23:59) で設定されています
@@ -158,16 +190,13 @@ export default function SettingsPage() {
                           <button onClick={() => removeSlot(dow.val, slot.id)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition">
                             <Trash2 size={16} />
                           </button>
-
                           <div className="flex items-center gap-3 pr-6">
                             <div className="flex bg-gray-200 dark:bg-gray-700 p-1 rounded-lg shrink-0 gap-1">
                               <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'maru')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'maru' ? 'bg-white shadow text-green-600 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>⭕️</button>
                               <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'sankaku')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'sankaku' ? 'bg-white shadow text-orange-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>🔺</button>
                               <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'batsu')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'batsu' ? 'bg-white shadow text-red-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>❌</button>
                             </div>
-                            {/* 個別の「終日」チェックは削除して超スッキリ！ */}
                           </div>
-
                           <div className="flex items-center gap-2">
                             <input type="time" value={slot.start} onChange={e => updateSlot(dow.val, slot.id, 'start', e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm flex-1 focus:ring-2 focus:ring-purple-500 outline-none" />
                             <span className="text-gray-400 text-xs">〜</span>
@@ -182,30 +211,44 @@ export default function SettingsPage() {
             </div>
           ))}
         </div>
-      </div>
+      </AccordionItem>
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-gray-500">
-        <div className="flex items-center gap-2 mb-6 text-gray-700 dark:text-gray-300">
-          <Settings size={24} />
-          <h2 className="text-xl font-bold dark:text-gray-100">データ引き継ぎ設定</h2>
-        </div>
-        <div className="space-y-8">
+      {/* 📦 アコーディオン2：データ引き継ぎ＆連携設定 */}
+      <AccordionItem 
+        title="データ引き継ぎ・連携" 
+        icon={<Settings className="text-gray-700 dark:text-gray-300" size={24} />}
+        borderColorClass="border-gray-500"
+      >
+        <div className="space-y-8 mt-2">
+          {/* 既存のブラウザ引き継ぎ機能 */}
           <div>
-            <label className="block text-sm font-bold mb-2 text-blue-800 dark:text-blue-400">① 今のデータを引き継ぎたい場合</label>
+            <label className="block text-sm font-bold mb-2 text-blue-800 dark:text-blue-400">① 今のデータを手動で引き継ぐ</label>
             <div className="flex gap-2">
               <input readOnly value={deviceGuestId} className="flex-1 p-3 bg-gray-100 dark:bg-gray-800 border dark:border-gray-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 outline-none" />
               <button onClick={() => { navigator.clipboard.writeText(deviceGuestId); alert('コピーしました！'); }} className="p-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold rounded-lg hover:bg-gray-300 transition shrink-0">コピー</button>
             </div>
           </div>
           <div className="border-t dark:border-gray-700 pt-6">
-            <label className="block text-sm font-bold mb-2 text-green-800 dark:text-green-400">② 別のデータをここに復元したい場合</label>
+            <label className="block text-sm font-bold mb-2 text-green-800 dark:text-green-400">② 別のデータをここに復元する</label>
             <div className="flex gap-2">
               <input value={transferIdInput} onChange={e => setTransferIdInput(e.target.value)} placeholder="引き継ぎIDをペースト" className="flex-1 p-3 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-green-500" />
               <button onClick={handleTransfer} className="p-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition shadow shrink-0">復元する</button>
             </div>
           </div>
+
+          {/* 🚀 NEW: Google連携機能 */}
+          <div className="border-t dark:border-gray-700 pt-6">
+            <label className="block text-sm font-bold mb-2 text-red-600 dark:text-red-400">③ Googleアカウントと連携する (推奨)</label>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mb-4 font-medium">
+              Googleと連携すると、今後のデータが自動でバックアップされ、カレンダーの予定と同期できるようになります！
+            </p>
+            <div className="flex justify-center">
+              {/* ここにGoogleログインボタンが出現！ */}
+              <GoogleLoginButton />
+            </div>
+          </div>
         </div>
-      </div>
+      </AccordionItem>
     </div>
   );
 }
