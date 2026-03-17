@@ -22,7 +22,6 @@ export default function TopPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   
-  // 💡 初期状態も空っぽ（''）にする
   const [dayBlocks, setDayBlocks] = useState<DayBlock[]>([
     { id: crypto.randomUUID(), date: format(new Date(), 'yyyy-MM-dd'), isAllDay: false, isExpanded: true, times: [{ id: crypto.randomUUID(), start: '', end: '' }] }
   ]);
@@ -38,6 +37,9 @@ export default function TopPage() {
   const [mySchedules, setMySchedules] = useState<ConfirmedSchedule[]>([]);
   const [fetchingSchedules, setFetchingSchedules] = useState(false);
   const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
+
+  // 💡 一括作成エリアの開閉状態を管理（初期値は false = 閉じてる）
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
 
   const [bulkStartDate, setBulkStartDate] = useState('');
   const [bulkEndDate, setBulkEndDate] = useState('');
@@ -119,7 +121,6 @@ export default function TopPage() {
     const newBlock: DayBlock = { 
       id: crypto.randomUUID(), date: dateStr, 
       isAllDay: mem ? mem.isAllDay : false, isExpanded: true, 
-      // 💡 新規追加時は空っぽ（''）にする
       times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }] 
     };
     setDayBlocks([...dayBlocks, newBlock].sort((a, b) => a.date.localeCompare(b.date)));
@@ -143,22 +144,14 @@ export default function TopPage() {
     setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, isAllDay: checked } : b));
   };
 
-  // 💡 時間を追加する時の2時間枠ロジック
   const addTimeSlot = (blockId: string) => {
     setDayBlocks(dayBlocks.map(b => {
       if (b.id === blockId) {
         const lastTime = b.times[b.times.length - 1];
-        let newStart = '12:00';
-        let newEnd = '14:00';
-        
-        // 💡 前の枠がちゃんと入力されていれば、その終了時間から2時間枠を作る！
+        let newStart = '12:00'; let newEnd = '14:00';
         if (lastTime && lastTime.end) {
           newStart = lastTime.end;
-          try {
-            newEnd = format(addMinutes(new Date(`2000-01-01T${newStart}`), 120), 'HH:mm');
-          } catch (e) {
-            newEnd = '23:59'; // 計算エラー時はとりあえず23:59
-          }
+          try { newEnd = format(addMinutes(new Date(`2000-01-01T${newStart}`), 120), 'HH:mm'); } catch (e) { newEnd = '23:59'; }
         }
         return { ...b, times: [...b.times, { id: crypto.randomUUID(), start: newStart, end: newEnd }] };
       }
@@ -184,7 +177,6 @@ export default function TopPage() {
       const newBlock: DayBlock = {
         id: crypto.randomUUID(), date: dateStr,
         isAllDay: mem ? mem.isAllDay : false, isExpanded: true,
-        // 💡 ここも新規は空っぽにする
         times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }]
       };
       const newBlocks = [...dayBlocks, newBlock];
@@ -259,7 +251,6 @@ export default function TopPage() {
           }
 
           if (existingBlock) {
-             // 💡 既存の空っぽ枠があれば消してから追加する
              const validExistingTimes = existingBlock.times.filter(t => t.start && t.end);
              existingBlock.times = [...validExistingTimes, ...generatedTimes];
              existingBlock.isAllDay = false; 
@@ -276,6 +267,8 @@ export default function TopPage() {
     if (newBlocks.length === dayBlocks.length) return alert('条件に合う日がなかったよ😢');
     newBlocks.sort((a, b) => a.date.localeCompare(b.date));
     setDayBlocks(newBlocks.filter(b => b.date !== format(new Date(), 'yyyy-MM-dd') || b.times.some(t => t.start && t.end) || b.isAllDay));
+    // 生成したら一括作成エリアを閉じる！
+    setIsBulkOpen(false);
   };
 
   const handleCreate = async () => {
@@ -286,15 +279,11 @@ export default function TopPage() {
         flatSlotsToSubmit.push({ startAt: `${block.date}T00:00`, endAt: `${block.date}T23:59` });
       } else {
         block.times.forEach(t => {
-          // 💡 ここで start と end の両方が入力されているものだけを抽出する！（誤爆防止）
-          if (t.start && t.end) {
-            flatSlotsToSubmit.push({ startAt: `${block.date}T${t.start}`, endAt: `${block.date}T${t.end}` });
-          }
+          if (t.start && t.end) flatSlotsToSubmit.push({ startAt: `${block.date}T${t.start}`, endAt: `${block.date}T${t.end}` });
         });
       }
     });
 
-    // 空っぽの日程しかない場合はエラーにする
     if (!title || flatSlotsToSubmit.length === 0) return alert('タイトルと、少なくとも1つの「有効な時間枠」を入力してね！');
     setLoading(true);
 
@@ -322,8 +311,6 @@ export default function TopPage() {
   };
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
-
-  // 💡 有効な枠（時間が入力されている枠）だけをカウントする
   const totalSlotsCount = dayBlocks.reduce((acc, block) => acc + (block.isAllDay ? 1 : block.times.filter(t => t.start && t.end).length), 0);
 
   if (createdEventId) {
@@ -372,46 +359,61 @@ export default function TopPage() {
               <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例: BNS合同練習" />
             </div>
             
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800/30 space-y-3">
-              <label className="block text-sm font-bold flex items-center gap-1 text-blue-800 dark:text-blue-300">
-                <CalendarDays size={16} /> 期間と曜日で一括作成
-              </label>
-              <div className="flex items-center gap-2">
-                <input type="date" value={bulkStartDate} onChange={e => setBulkStartDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
-                <span className="text-gray-500">〜</span>
-                <input type="date" value={bulkEndDate} onChange={e => setBulkEndDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="flex gap-2 flex-wrap items-center">
-                {DOW_LABELS.map(dow => (
-                  <button key={dow.val} onClick={() => toggleDow(dow.val)}
-                    className={`w-10 h-10 rounded-full font-bold text-sm border transition-colors ${selectedDows.includes(dow.val) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
-                    {dow.label}
-                  </button>
-                ))}
-                <button onClick={toggleEveryday} className={`ml-2 px-3 py-2 rounded-full font-bold text-sm border transition-colors ${selectedDows.length === 7 ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 dark:border-gray-700'}`}>
-                  毎日
-                </button>
-              </div>
-              
-              <div className="flex items-center gap-2 mb-2">
-                <input type="checkbox" id="bulkAllDay" checked={bulkIsAllDay} onChange={e => setBulkIsAllDay(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
-                <label htmlFor="bulkAllDay" className="text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">時間を指定せず「終日」にする</label>
-              </div>
+            {/* 💡 一括作成エリアを折りたたみ式に進化！ */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800/30 overflow-hidden shadow-sm transition-all">
+              <button 
+                onClick={() => setIsBulkOpen(!isBulkOpen)}
+                className="w-full flex items-center justify-between p-4 bg-blue-100/50 dark:bg-blue-900/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300 font-bold">
+                  <CalendarDays size={18} />
+                  <span>期間と曜日で一括作成</span>
+                </div>
+                <div className="text-blue-600 dark:text-blue-400 bg-white/50 dark:bg-gray-800/50 p-1 rounded-full">
+                  {isBulkOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                </div>
+              </button>
 
-              {!bulkIsAllDay && (
-                <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700">
-                  <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
-                  <span className="text-gray-500">〜</span>
-                  <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
-                  <select value={bulkInterval} onChange={e => setBulkInterval(e.target.value)} className="p-1 border-l dark:border-gray-600 pl-2 text-sm flex-1 text-gray-600 dark:text-gray-300 dark:bg-gray-800 outline-none">
-                    <option value="60">60分枠</option>
-                    <option value="90">90分枠</option>
-                    <option value="120">2時間枠</option>
-                    <option value="180">3時間枠</option>
-                  </select>
+              {isBulkOpen && (
+                <div className="p-4 space-y-4 border-t border-blue-200/50 dark:border-blue-800/30">
+                  <div className="flex items-center gap-2">
+                    <input type="date" value={bulkStartDate} onChange={e => setBulkStartDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
+                    <span className="text-gray-500">〜</span>
+                    <input type="date" value={bulkEndDate} onChange={e => setBulkEndDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="flex gap-2 flex-wrap items-center">
+                    {DOW_LABELS.map(dow => (
+                      <button key={dow.val} onClick={() => toggleDow(dow.val)}
+                        className={`w-10 h-10 rounded-full font-bold text-sm border transition-colors ${selectedDows.includes(dow.val) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
+                        {dow.label}
+                      </button>
+                    ))}
+                    <button onClick={toggleEveryday} className={`ml-2 px-3 py-2 rounded-full font-bold text-sm border transition-colors ${selectedDows.length === 7 ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 dark:border-gray-700'}`}>
+                      毎日
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mb-2">
+                    <input type="checkbox" id="bulkAllDay" checked={bulkIsAllDay} onChange={e => setBulkIsAllDay(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                    <label htmlFor="bulkAllDay" className="text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">時間を指定せず「終日」にする</label>
+                  </div>
+
+                  {!bulkIsAllDay && (
+                    <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700">
+                      <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
+                      <span className="text-gray-500">〜</span>
+                      <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
+                      <select value={bulkInterval} onChange={e => setBulkInterval(e.target.value)} className="p-1 border-l dark:border-gray-600 pl-2 text-sm flex-1 text-gray-600 dark:text-gray-300 dark:bg-gray-800 outline-none">
+                        <option value="60">60分枠</option>
+                        <option value="90">90分枠</option>
+                        <option value="120">2時間枠</option>
+                        <option value="180">3時間枠</option>
+                      </select>
+                    </div>
+                  )}
+                  <button onClick={generateBulkSlots} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition mt-2">条件に合う枠を一気に追加する</button>
                 </div>
               )}
-              <button onClick={generateBulkSlots} className="w-full py-2 bg-blue-600 text-white font-bold rounded shadow-sm hover:bg-blue-700 transition">条件に合う枠を一気に追加する</button>
             </div>
 
             <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-200 dark:border-green-800/30 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -512,7 +514,6 @@ export default function TopPage() {
                               block.times.map((time) => (
                                 <div key={time.id} className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 p-2 rounded-lg border dark:border-gray-700 group">
                                   <div className="flex items-center gap-2 flex-1 pl-2">
-                                    {/* 💡 ここが空（''）の時はプレースホルダーが見えるように */}
                                     <input type="time" value={time.start} onChange={e => updateTimeSlot(block.id, time.id, 'start', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500" />
                                     <span className="text-gray-400 text-xs">〜</span>
                                     <input type="time" value={time.end} onChange={e => updateTimeSlot(block.id, time.id, 'end', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500" />

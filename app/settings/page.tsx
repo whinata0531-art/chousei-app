@@ -2,19 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { Settings, CalendarDays, ArrowLeft, Trash2, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation'; // 💡 これを追加！
+import { useRouter } from 'next/navigation';
 
 type RoutineSlot = { id: string; isAllDay: boolean; start: string; end: string; status: 'maru' | 'sankaku' | 'batsu' };
 type WeeklyRoutine = Record<number, RoutineSlot[]>;
 
 export default function SettingsPage() {
-  const router = useRouter(); // 💡 ルーターを準備
+  const router = useRouter();
   const [deviceGuestId, setDeviceGuestId] = useState('');
   const [transferIdInput, setTransferIdInput] = useState('');
 
   const [routine, setRoutine] = useState<WeeklyRoutine>({
     0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []
   });
+
+  // 💡 終日チェックを外した時に元に戻すためのメモリ！
+  const [routineMemory, setRoutineMemory] = useState<Record<number, RoutineSlot[]>>({});
 
   const DOW_LABELS = [
     { label: '日曜日', val: 0, color: 'text-red-500' }, { label: '月曜日', val: 1, color: 'text-gray-700 dark:text-gray-300' }, 
@@ -47,6 +50,27 @@ export default function SettingsPage() {
     localStorage.setItem('weeklyRoutine', JSON.stringify(newRoutine));
   };
 
+  // 💡 その曜日が「終日モード」かどうかを判定
+  const isDowAllDay = (dow: number) => {
+    const slots = routine[dow];
+    return slots && slots.length === 1 && slots[0].isAllDay;
+  };
+
+  // 💡 終日モードの切り替え処理
+  const toggleDowAllDay = (dow: number, checked: boolean) => {
+    if (checked) {
+      // 今の個別枠を記憶しておく
+      setRoutineMemory(prev => ({ ...prev, [dow]: routine[dow] }));
+      // 終日用の特別な1枠だけにする
+      const allDaySlot: RoutineSlot = { id: crypto.randomUUID(), isAllDay: true, start: '', end: '', status: 'maru' };
+      saveRoutine({ ...routine, [dow]: [allDaySlot] });
+    } else {
+      // 記憶から復元する（なければ空にする）
+      const mem = routineMemory[dow];
+      saveRoutine({ ...routine, [dow]: mem && mem.length > 0 ? mem : [] });
+    }
+  };
+
   const addSlot = (dow: number) => {
     const newSlot: RoutineSlot = { id: crypto.randomUUID(), isAllDay: false, start: '12:00', end: '18:00', status: 'maru' };
     saveRoutine({ ...routine, [dow]: [...routine[dow], newSlot] });
@@ -74,7 +98,6 @@ export default function SettingsPage() {
     <div className="max-w-xl mx-auto p-4 mt-6 space-y-8 pb-20">
       <div className="flex items-center justify-between border-b dark:border-gray-700 pb-4 sticky top-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md z-10 pt-2">
         <div className="flex items-center gap-3">
-          {/* 💡 router.back() を使って「直前のページに戻る」ように変更！ */}
           <button onClick={() => router.back()} className="p-2 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-full transition shadow-sm">
             <ArrowLeft size={20} />
           </button>
@@ -94,43 +117,66 @@ export default function SettingsPage() {
         <div className="space-y-6">
           {DOW_LABELS.map(dow => (
             <div key={dow.val} className="border dark:border-gray-700 rounded-xl overflow-hidden shadow-sm">
-              <div className={`bg-gray-100 dark:bg-gray-800 px-4 py-2 font-bold ${dow.color} border-b dark:border-gray-700 flex justify-between items-center`}>
-                {dow.label}
-                <button onClick={() => addSlot(dow.val)} className="text-xs flex items-center gap-1 bg-white dark:bg-gray-700 border dark:border-gray-600 px-2 py-1 rounded text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 shadow-sm transition">
-                  <Plus size={14}/> 枠を追加
-                </button>
+              <div className={`bg-gray-100 dark:bg-gray-800 px-4 py-3 font-bold ${dow.color} border-b dark:border-gray-700 flex justify-between items-center`}>
+                <div className="flex items-center gap-3">
+                  <span>{dow.label}</span>
+                  {/* 💡 曜日ごとの終日チェックボックス！ */}
+                  <label className="flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white/50 dark:bg-gray-700 px-2 py-1 rounded border border-blue-200 dark:border-blue-800/50">
+                    <input type="checkbox" checked={isDowAllDay(dow.val)} onChange={e => toggleDowAllDay(dow.val, e.target.checked)} className="w-3 h-3 text-blue-600" />
+                    終日
+                  </label>
+                </div>
+                {/* 終日モードの時は「枠を追加」ボタンを隠す */}
+                {!isDowAllDay(dow.val) && (
+                  <button onClick={() => addSlot(dow.val)} className="text-xs flex items-center gap-1 bg-white dark:bg-gray-700 border dark:border-gray-600 px-2 py-1 rounded text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 shadow-sm transition">
+                    <Plus size={14}/> 枠を追加
+                  </button>
+                )}
               </div>
               
-              <div className="p-3 space-y-3 bg-white dark:bg-gray-900">
-                {routine[dow.val].length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-2">固定の予定はありません</p>
-                ) : (
-                  routine[dow.val].map(slot => (
-                    <div key={slot.id} className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 relative flex flex-col gap-2">
-                      <button onClick={() => removeSlot(dow.val, slot.id)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition">
-                        <Trash2 size={16} />
-                      </button>
-
-                      <div className="flex items-center gap-3 pr-6">
-                        <div className="flex bg-gray-200 dark:bg-gray-700 p-1 rounded-lg shrink-0 gap-1">
-                          <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'maru')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'maru' ? 'bg-white shadow text-green-600 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>⭕️</button>
-                          <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'sankaku')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'sankaku' ? 'bg-white shadow text-orange-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>🔺</button>
-                          <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'batsu')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'batsu' ? 'bg-white shadow text-red-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>❌</button>
-                        </div>
-                        <label className="flex items-center gap-1 text-xs font-bold text-gray-600 dark:text-gray-300 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded border dark:border-gray-600">
-                          <input type="checkbox" checked={slot.isAllDay} onChange={e => updateSlot(dow.val, slot.id, 'isAllDay', e.target.checked)} className="w-3 h-3" /> 終日
-                        </label>
-                      </div>
-
-                      {!slot.isAllDay && (
-                        <div className="flex items-center gap-2">
-                          <input type="time" value={slot.start} onChange={e => updateSlot(dow.val, slot.id, 'start', e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm flex-1 focus:ring-2 focus:ring-purple-500 outline-none" />
-                          <span className="text-gray-400">〜</span>
-                          <input type="time" value={slot.end} onChange={e => updateSlot(dow.val, slot.id, 'end', e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm flex-1 focus:ring-2 focus:ring-purple-500 outline-none" />
-                        </div>
-                      )}
+              <div className="p-3 bg-white dark:bg-gray-900">
+                {isDowAllDay(dow.val) ? (
+                  // 💡 終日モードの時のスッキリUI！
+                  <div className="text-center py-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
+                    <div className="text-blue-600 dark:text-blue-400 font-bold text-sm">
+                      🌟 終日 (0:00〜23:59) で設定されています
                     </div>
-                  ))
+                    <div className="flex bg-gray-200 dark:bg-gray-700 p-1 rounded-lg shrink-0 gap-1">
+                      <button onClick={() => updateSlot(dow.val, routine[dow.val][0].id, 'status', 'maru')} className={`w-12 py-1.5 text-sm rounded-md transition-all ${routine[dow.val][0].status === 'maru' ? 'bg-white shadow text-green-600 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>⭕️</button>
+                      <button onClick={() => updateSlot(dow.val, routine[dow.val][0].id, 'status', 'sankaku')} className={`w-12 py-1.5 text-sm rounded-md transition-all ${routine[dow.val][0].status === 'sankaku' ? 'bg-white shadow text-orange-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>🔺</button>
+                      <button onClick={() => updateSlot(dow.val, routine[dow.val][0].id, 'status', 'batsu')} className={`w-12 py-1.5 text-sm rounded-md transition-all ${routine[dow.val][0].status === 'batsu' ? 'bg-white shadow text-red-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>❌</button>
+                    </div>
+                    <p className="text-xs text-gray-400 font-normal">※チェックを外すと記憶していた個別の時間枠に戻ります</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {routine[dow.val].length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-2">固定の予定はありません</p>
+                    ) : (
+                      routine[dow.val].map(slot => (
+                        <div key={slot.id} className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 relative flex flex-col gap-2">
+                          <button onClick={() => removeSlot(dow.val, slot.id)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition">
+                            <Trash2 size={16} />
+                          </button>
+
+                          <div className="flex items-center gap-3 pr-6">
+                            <div className="flex bg-gray-200 dark:bg-gray-700 p-1 rounded-lg shrink-0 gap-1">
+                              <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'maru')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'maru' ? 'bg-white shadow text-green-600 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>⭕️</button>
+                              <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'sankaku')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'sankaku' ? 'bg-white shadow text-orange-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>🔺</button>
+                              <button onClick={() => updateSlot(dow.val, slot.id, 'status', 'batsu')} className={`w-10 py-1 text-sm rounded-md transition-all ${slot.status === 'batsu' ? 'bg-white shadow text-red-500 font-bold' : 'text-gray-400 hover:bg-gray-400 opacity-50'}`}>❌</button>
+                            </div>
+                            {/* 個別の「終日」チェックは削除して超スッキリ！ */}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <input type="time" value={slot.start} onChange={e => updateSlot(dow.val, slot.id, 'start', e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm flex-1 focus:ring-2 focus:ring-purple-500 outline-none" />
+                            <span className="text-gray-400 text-xs">〜</span>
+                            <input type="time" value={slot.end} onChange={e => updateSlot(dow.val, slot.id, 'end', e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm flex-1 focus:ring-2 focus:ring-purple-500 outline-none" />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 )}
               </div>
             </div>
