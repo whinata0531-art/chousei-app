@@ -615,7 +615,7 @@ const fetchRecentEvents = async (guestId: string) => {
                             onClick={() => toggleConfirmSlot(slot.id, slot.is_confirmed)}
                             className={`px-4 py-2 text-sm font-bold rounded-lg shadow transition-colors ${slot.is_confirmed ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
                           >
-                            {slot.is_confirmed ? '仮確定を解除' : '📌 仮確定にする (全員操作可)'}
+                            {slot.is_confirmed ? '仮確定を解除' : '📌 仮確定にする'}
                           </button>
                         </div>
                       </div>
