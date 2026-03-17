@@ -57,6 +57,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   // 💡 タイトル編集用
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleStr, setEditTitleStr] = useState('');
+  const [editDescStr, setEditDescStr] = useState(''); // 💡 メモ編集用を追加！
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -130,9 +131,27 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     return () => window.removeEventListener('scroll', handleScroll);
   }, [eventId]);
 
-  const fetchRecentEvents = async (guestId: string) => {
+const fetchRecentEvents = async (guestId: string) => {
     const { data } = await supabase.from('user_recent_events').select('*').eq('guest_id', guestId).order('accessed_at', { ascending: false }).limit(10);
     if (data) setRecentEvents(data.map((d: any) => ({ id: d.event_id, title: d.event_title, lastAccessed: d.accessed_at })));
+  };
+
+  // 💡 消えていた履歴削除関数を復活！
+  const removeRecentEvent = async (e: React.MouseEvent, targetEventId: string) => {
+    e.preventDefault();
+    if (!confirm('このイベントを履歴から削除しますか？')) return;
+    await supabase.from('user_recent_events').delete().eq('guest_id', deviceGuestId).eq('event_id', targetEventId);
+    setRecentEvents(prev => prev.filter(re => re.id !== targetEventId));
+  };
+
+  // 💡 タイトルとメモを保存する関数を追加！
+  const handleSaveEventInfo = async () => {
+    if (!editTitleStr.trim()) return alert('タイトルを入力してください');
+    setLoading(true);
+    await supabase.from('events').update({ title: editTitleStr, description: editDescStr }).eq('id', eventId);
+    setEvent({ ...event, title: editTitleStr, description: editDescStr });
+    setIsEditingTitle(false);
+    setLoading(false);
   };
 
   const fetchStats = async (currentSlots: Slot[]) => {
@@ -406,26 +425,36 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </Link>
       </div>
 
-      <div className="text-center mb-6">
-        {/* 💡 タイトル編集機能の追加！ */}
+<div className="text-center mb-6">
         {isHost && isEditingTitle ? (
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <input type="text" value={editTitleStr} onChange={e => setEditTitleStr(e.target.value)} className="p-2 border rounded-lg text-xl font-bold text-gray-800 dark:text-gray-100 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-blue-500" />
-            <button onClick={handleSaveTitle} className="p-2 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow-sm transition">
-              <Check size={20}/>
-            </button>
+          <div className="flex flex-col items-center justify-center gap-2 mb-4 w-full">
+            <div className="flex items-center gap-2 w-full">
+              <input type="text" value={editTitleStr} onChange={e => setEditTitleStr(e.target.value)} className="p-2 border dark:border-gray-700 rounded-lg text-xl font-bold text-gray-800 dark:text-gray-100 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-blue-500 flex-1" />
+              <button onClick={handleSaveEventInfo} className="p-2 bg-green-500 hover:bg-green-600 text-white rounded-lg shadow-sm transition shrink-0">
+                <Check size={20}/>
+              </button>
+            </div>
+            <textarea value={editDescStr} onChange={e => setEditDescStr(e.target.value)} className="w-full p-2 border dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300 dark:bg-gray-800 outline-none focus:ring-2 focus:ring-blue-500 h-20 resize-none" placeholder="メモ（任意）" />
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-2 mb-2 group">
-            <h1 className="text-3xl font-bold text-gray-800 dark:text-blue-400">{event.title}</h1>
-            {isHost && (
-              <button onClick={() => { setEditTitleStr(event.title); setIsEditingTitle(true); }} className="text-gray-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition p-1">
-                <Edit3 size={20} />
-              </button>
+          <div className="flex flex-col items-center justify-center gap-2 mb-2 group">
+            <div className="flex items-center justify-center gap-3">
+              <h1 className="text-3xl font-bold text-gray-800 dark:text-blue-400 break-words">{event.title}</h1>
+              {isHost && (
+                <button 
+                  onClick={() => { setEditTitleStr(event.title); setEditDescStr(event.description || ''); setIsEditingTitle(true); }} 
+                  className="flex-shrink-0 text-gray-500 bg-gray-100 hover:bg-blue-50 hover:text-blue-600 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700 dark:hover:text-blue-400 p-2 rounded-full transition shadow-sm"
+                  title="イベント情報を編集"
+                >
+                  <Edit3 size={18} />
+                </button>
+              )}
+            </div>
+            {!isEditingTitle && event.description && (
+              <p className="text-gray-600 dark:text-gray-300 whitespace-pre-wrap mt-2">{event.description}</p>
             )}
           </div>
         )}
-        {event.description && <p className="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{event.description}</p>}
       </div>
 
       {isEventConfirmed && activeTab !== 'my-schedule' && (
@@ -560,7 +589,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     const tier = getSlotTier(slot);
                     const highlightClass = 
                       tier === 1 ? 'bg-green-50 border-green-400 ring-2 ring-green-200 dark:bg-green-900/30 dark:border-green-600 dark:ring-green-800/50' :
-                      tier === 2 ? 'bg-orange-50 border-orange-300 dark:bg-orange-900/30 dark:border-orange-700' : 
+                      // 1箇所目（リスト）
+                      tier === 2 ? 'bg-orange-50 border-orange-300 dark:bg-yellow-900/20 dark:border-yellow-600/50' :
                       'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700';
 
                     return (
@@ -613,7 +643,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                         const headerClass = 
                           slot.is_confirmed ? 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700' :
                           tier === 1 ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700' :
-                          tier === 2 ? 'bg-orange-100 dark:bg-orange-900/50 text-orange-800 dark:text-orange-400 border-orange-200 dark:border-orange-800' : 
+                          tier === 2 ? 'bg-orange-100 dark:bg-yellow-900/30 text-orange-800 dark:text-yellow-400 border-orange-200 dark:border-yellow-700/50' : 
                           'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 dark:border-gray-700';
                         
                         return (
@@ -636,7 +666,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                           const cellClass = 
                             slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20' :
                             tier === 1 ? 'bg-green-50 dark:bg-green-900/20' :
-                            tier === 2 ? 'bg-orange-50/50 dark:bg-orange-900/10' : 'dark:bg-gray-800';
+                            tier === 2 ? 'bg-orange-50/50 dark:bg-yellow-900/20' : 'dark:bg-gray-800';
                             
                           return (
                             <td key={slot.id} className={`p-3 border-b dark:border-gray-700 text-center text-xl ${cellClass}`}>{getStatusIcon(row.answers[slot.id])}</td>

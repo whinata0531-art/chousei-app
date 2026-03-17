@@ -20,7 +20,7 @@ export default function TopPage() {
   const [activeTab, setActiveTab] = useState<'create' | 'my-schedule'>('create');
   
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(''); // 💡 メモ用のステート（元々あったやつ）
   
   const [dayBlocks, setDayBlocks] = useState<DayBlock[]>([
     { id: crypto.randomUUID(), date: format(new Date(), 'yyyy-MM-dd'), isAllDay: false, isExpanded: true, times: [{ id: crypto.randomUUID(), start: '', end: '' }] }
@@ -38,7 +38,6 @@ export default function TopPage() {
   const [fetchingSchedules, setFetchingSchedules] = useState(false);
   const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
 
-  // 💡 一括作成エリアの開閉状態を管理（初期値は false = 閉じてる）
   const [isBulkOpen, setIsBulkOpen] = useState(false);
 
   const [bulkStartDate, setBulkStartDate] = useState('');
@@ -267,7 +266,6 @@ export default function TopPage() {
     if (newBlocks.length === dayBlocks.length) return alert('条件に合う日がなかったよ😢');
     newBlocks.sort((a, b) => a.date.localeCompare(b.date));
     setDayBlocks(newBlocks.filter(b => b.date !== format(new Date(), 'yyyy-MM-dd') || b.times.some(t => t.start && t.end) || b.isAllDay));
-    // 生成したら一括作成エリアを閉じる！
     setIsBulkOpen(false);
   };
 
@@ -316,23 +314,34 @@ export default function TopPage() {
   if (createdEventId) {
     const eventUrl = `${window.location.origin}/event/${createdEventId}`;
     return (
-      <div className="max-w-xl mx-auto p-6 mt-10 bg-white rounded-xl shadow-md space-y-6">
-        <h1 className="text-2xl font-bold text-center text-green-600">イベント作成完了！🎉</h1>
-        <div className="bg-blue-50 p-6 rounded-xl border border-blue-200 shadow-sm text-center">
-          <p className="font-bold text-lg text-blue-900 mb-2">共有＆集計用 URL</p>
-          <p className="text-sm text-blue-700 mb-4">※回答も集計の確認も、このURL一つで全員ができます！</p>
+      <div className="max-w-xl mx-auto p-6 mt-10 bg-white dark:bg-gray-900 rounded-xl shadow-md space-y-6">
+        <h1 className="text-2xl font-bold text-center text-green-600 dark:text-green-400">イベント作成完了！🎉</h1>
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800/30 shadow-sm text-center">
+          <p className="font-bold text-lg text-blue-900 dark:text-blue-300 mb-2">共有＆集計用 URL</p>
+          <p className="text-sm text-blue-700 dark:text-blue-400 mb-4">※回答も集計の確認も、このURL一つで全員ができます！</p>
           <div className="flex items-center gap-2 mb-4">
-            <input readOnly value={eventUrl} className="flex-1 p-3 bg-white border rounded-lg text-sm text-gray-700 focus:outline-none" />
-            <button onClick={() => navigator.clipboard.writeText(eventUrl)} className="p-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"><LinkIcon size={20} /></button>
+            <input readOnly value={eventUrl} className="flex-1 p-3 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-200 focus:outline-none" />
+            <button onClick={() => { navigator.clipboard.writeText(eventUrl); alert('コピーしました！'); }} className="p-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
+              <LinkIcon size={20} />
+            </button>
           </div>
-          <button onClick={() => handleShare(eventUrl)} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 shadow-md transition-all">
-            <Share2 size={20} /> LINEやXでメンバーに共有する
-          </button>
+          
+          <div className="space-y-3">
+            <button onClick={() => handleShare(eventUrl)} className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 shadow-md transition-all">
+              <Share2 size={20} /> LINEやXでメンバーに共有する
+            </button>
+            
+            {/* 💡 ここに「自分で回答する」ボタンを追加！ */}
+            <Link href={`/event/${createdEventId}`} className="w-full py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 font-bold rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all">
+              さっそく自分で回答する <ChevronRight size={20} />
+            </Link>
+          </div>
+
         </div>
       </div>
     );
   }
-
+  
   return (
     <div className="max-w-xl mx-auto p-4 mt-6 space-y-6 pb-20">
       <div className="flex justify-between items-center px-1 mb-2">
@@ -354,12 +363,18 @@ export default function TopPage() {
       {activeTab === 'create' && (
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-blue-500">
           <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-bold mb-1 dark:text-gray-300">イベント名 *</label>
-              <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例: BNS合同練習" />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold mb-1 dark:text-gray-300">イベント名 *</label>
+                <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例: BNS合同練習" />
+              </div>
+              {/* 💡 メモ欄を復活！ */}
+              <div>
+                <label className="block text-sm font-bold mb-1 dark:text-gray-300">メモ（任意）</label>
+                <textarea value={description} onChange={e => setDescription(e.target.value)} className="w-full p-2 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded focus:ring-2 focus:ring-blue-500 outline-none h-20 resize-none" placeholder="場所や持ち物、補足情報など" />
+              </div>
             </div>
             
-            {/* 💡 一括作成エリアを折りたたみ式に進化！ */}
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800/30 overflow-hidden shadow-sm transition-all">
               <button 
                 onClick={() => setIsBulkOpen(!isBulkOpen)}
