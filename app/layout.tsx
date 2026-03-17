@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "最強調整",
   description: "最強の日程調整アプリ",
+  manifest: '/manifest.json', // 💡 この1行を足すだけ！
 };
 
 export default function RootLayout({

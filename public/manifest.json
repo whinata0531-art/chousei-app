@@ -1,0 +1,16 @@
+{
+  "name": "最強調整",
+  "short_name": "最強調整",
+  "description": "最強の日程調整アプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
