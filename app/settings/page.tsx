@@ -1,16 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings, CalendarDays, ArrowLeft, Trash2, Plus } from 'lucide-react';
+import { Settings, CalendarDays, ArrowLeft, Trash2, Plus, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-// 💡 さっき作ったボタンをインポート！（もしパスが違ったら直してね！）
-import GoogleLoginButton from '@/app/components/GoogleLoginButton';
+import { supabase } from '../../lib/supabase'; // パスは適宜合わせてね！
+import GoogleLoginButton from '../components/GoogleLoginButton';
 
 type RoutineSlot = { id: string; isAllDay: boolean; start: string; end: string; status: 'maru' | 'sankaku' | 'batsu' };
 type WeeklyRoutine = Record<number, RoutineSlot[]>;
 
-// 💡 新しく追加：開け閉めできるアコーディオンの部品！
-// 元のデザイン（上のボーダー色とかアイコン）をそのまま引き継げるように工夫したよ！
+// 💡 色塗りの余計なコードを完全削除！
+// 背景と文字色は君のオリジナル（白ベース）、右側のアイコンだけChevronにしたよ！
 function AccordionItem({ 
   title, 
   icon, 
@@ -34,10 +34,12 @@ function AccordionItem({
           {icon}
           <h2 className="text-xl font-bold">{title}</h2>
         </div>
-        <span className="text-gray-400 font-bold">{isOpen ? '▲' : '▼'}</span>
+        {/* 💡 ここだけ丸っこいChevron矢印にアップデート！ */}
+        <div className="text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 p-1 rounded-full">
+          {isOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+        </div>
       </button>
       
-      {/* 開いている時だけ中身を表示 */}
       {isOpen && (
         <div className="px-6 pb-6 pt-0">
           {children}
@@ -51,6 +53,8 @@ export default function SettingsPage() {
   const router = useRouter();
   const [deviceGuestId, setDeviceGuestId] = useState('');
   const [transferIdInput, setTransferIdInput] = useState('');
+  
+  const [user, setUser] = useState<any>(null);
 
   const [routine, setRoutine] = useState<WeeklyRoutine>({
     0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: []
@@ -72,6 +76,32 @@ export default function SettingsPage() {
       localStorage.setItem('deviceGuestId', currentGuestId);
     }
     setDeviceGuestId(currentGuestId);
+
+    // 🌟 データ引き継ぎ（ガッチャンコ）魔法
+    const checkAuthAndMerge = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        setUser(session.user);
+        
+        if (currentGuestId && currentGuestId !== session.user.id) {
+          console.log('🔄 過去のデータをGoogleアカウントに紐付け中...');
+          
+          await Promise.all([
+            supabase.from('events').update({ host_id: session.user.id }).eq('host_id', currentGuestId),
+            supabase.from('responses').update({ guest_id: session.user.id }).eq('guest_id', currentGuestId),
+            supabase.from('user_recent_events').update({ guest_id: session.user.id }).eq('guest_id', currentGuestId)
+          ]);
+          
+          localStorage.setItem('deviceGuestId', session.user.id);
+          setDeviceGuestId(session.user.id);
+          
+          alert('🎉 過去のデータがすべてGoogleアカウントに紐付けられました！');
+        }
+      }
+    };
+    
+    checkAuthAndMerge();
 
     const savedRoutine = localStorage.getItem('weeklyRoutine');
     if (savedRoutine) {
@@ -128,6 +158,13 @@ export default function SettingsPage() {
     }
   };
 
+  const handleLogout = async () => {
+    if (confirm('ログアウトしますか？（データは消えません！）')) {
+      await supabase.auth.signOut();
+      window.location.reload(); 
+    }
+  };
+
   return (
     <div className="max-w-xl mx-auto p-4 mt-6 space-y-6 pb-20">
       <div className="flex items-center justify-between border-b dark:border-gray-700 pb-4 sticky top-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md z-10 pt-2">
@@ -139,7 +176,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* 📦 アコーディオン1：固定シフト設定 */}
+      {/* 📦 アコーディオン1：色味を元に戻したよ！ */}
       <AccordionItem 
         title="曜日ごとの固定シフト" 
         icon={<CalendarDays className="text-purple-600 dark:text-purple-400" size={24} />}
@@ -213,14 +250,13 @@ export default function SettingsPage() {
         </div>
       </AccordionItem>
 
-      {/* 📦 アコーディオン2：データ引き継ぎ＆連携設定 */}
+      {/* 📦 アコーディオン2：ここも色味を元に戻したよ！ */}
       <AccordionItem 
         title="データ引き継ぎ・連携" 
         icon={<Settings className="text-gray-700 dark:text-gray-300" size={24} />}
         borderColorClass="border-gray-500"
       >
         <div className="space-y-8 mt-2">
-          {/* 既存のブラウザ引き継ぎ機能 */}
           <div>
             <label className="block text-sm font-bold mb-2 text-blue-800 dark:text-blue-400">① 今のデータを手動で引き継ぐ</label>
             <div className="flex gap-2">
@@ -236,16 +272,34 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* 🚀 NEW: Google連携機能 */}
           <div className="border-t dark:border-gray-700 pt-6">
             <label className="block text-sm font-bold mb-2 text-red-600 dark:text-red-400">③ Googleアカウントと連携する (推奨)</label>
-            <p className="text-xs text-gray-600 dark:text-gray-400 mb-4 font-medium">
-              Googleと連携すると、今後のデータが自動でバックアップされ、カレンダーの予定と同期できるようになります！
-            </p>
-            <div className="flex justify-center">
-              {/* ここにGoogleログインボタンが出現！ */}
-              <GoogleLoginButton />
-            </div>
+            
+            {user ? (
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col items-center gap-3">
+                <div className="text-green-600 dark:text-green-400 font-bold flex items-center gap-2 text-lg">
+                  <CheckCircle2 size={24} /> 連携完了しています！
+                </div>
+                <p className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                  {user.email}
+                </p>
+                <button 
+                  onClick={handleLogout}
+                  className="mt-2 px-4 py-2 text-sm font-bold text-gray-500 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  ログアウト
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-4 font-medium">
+                  Googleと連携すると、今後のデータが自動でバックアップされ、カレンダーの予定と同期できるようになります！
+                </p>
+                <div className="flex justify-center">
+                  <GoogleLoginButton />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </AccordionItem>
