@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchGoogleCalendarEvents } from '@/lib/googleCalendar';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { use } from 'react';
@@ -54,6 +55,9 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
   const [showScrollTop, setShowScrollTop] = useState(false); // 💡 スクロールボタン用
   
+  // 💡 NEW: Googleにログインしているかどうかの判定用フラグ！
+  const [isGoogleLoggedIn, setIsGoogleLoggedIn] = useState(false);
+
   // 💡 タイトル編集用
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleStr, setEditTitleStr] = useState('');
@@ -61,6 +65,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
   useEffect(() => {
     const fetchAll = async () => {
+      // 💡 NEW: ここでログイン状態をチェックして、フラグをONにする！
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setIsGoogleLoggedIn(true);
+      }
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
         currentGuestId = crypto.randomUUID();
@@ -323,6 +332,67 @@ const fetchRecentEvents = async (guestId: string) => {
     alert(`クラウドの予定を優先して ${appliedCount} 件の回答を推測したよ！\n※念のためズレがないか確認してね！`);
   };
 
+  // 🌟 NEW: Googleカレンダーから予定を取ってきて、被ってる時間を❌にする最強魔法！
+  const applyGoogleCalendar = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const providerToken = session?.provider_token;
+
+    if (!providerToken) {
+      return alert('Googleカレンダーと同期するには、「設定」からもう一度Googleでログイン（再認証）してね！');
+    }
+
+    if (slots.length === 0) return;
+    setLoading(true);
+
+    try {
+      // 候補日程の中で「一番早い時間」と「一番遅い時間」を計算（通信を軽くするため！）
+      const startDates = slots.map(s => getFixedDate(s.start_at).getTime());
+      const endDates = slots.map(s => getFixedDate(s.end_at).getTime());
+      const minDate = new Date(Math.min(...startDates)).toISOString();
+      const maxDate = new Date(Math.max(...endDates)).toISOString();
+
+      // カレンダーの予定を取ってくる！
+      const gEvents = await fetchGoogleCalendarEvents(providerToken, minDate, maxDate);
+
+      if (gEvents.length === 0) {
+        setLoading(false);
+        return alert('カレンダーの予定と被っている時間はありませんでした！✨');
+      }
+
+      let appliedCount = 0;
+      const newAnswers = { ...answers };
+
+      // 候補日程を1つずつチェック！
+      slots.forEach(slot => {
+        const sStart = getFixedDate(slot.start_at).getTime();
+        const sEnd = getFixedDate(slot.end_at).getTime();
+
+        // Googleの予定と1ミリ秒でも被っていたらアウト（❌）判定！
+        const hasConflict = gEvents.some((ge: any) => {
+          const gStart = new Date(ge.start).getTime();
+          const gEnd = new Date(ge.end).getTime();
+          return Math.max(sStart, gStart) < Math.min(sEnd, gEnd);
+        });
+
+        if (hasConflict) {
+          newAnswers[slot.id] = 'batsu';
+          appliedCount++;
+        }
+      });
+
+      if (appliedCount > 0) {
+        setAnswers(newAnswers);
+        alert(`カレンダーと同期して、予定が被っている ${appliedCount} 枠を自動で「❌」にしたよ！📅`);
+      } else {
+        alert('候補日程とGoogleカレンダーの予定は被っていませんでした！✨');
+      }
+    } catch (error) {
+      alert('カレンダーの同期中にエラーが起きちゃいました💦');
+    }
+
+    setLoading(false);
+  };
+
   const handleSubmit = async () => {
     if (!guestName) return alert('名前を入力してね！');
     setLoading(true);
@@ -497,20 +567,36 @@ const fetchRecentEvents = async (guestId: string) => {
               className="w-full p-3 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力" />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-            <button onClick={applyWeeklyRoutine} className="w-full flex items-center justify-center gap-2 py-3 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 text-purple-700 dark:text-purple-400 text-sm font-bold rounded-lg border border-purple-200 dark:border-purple-800/50 shadow-sm transition">
-              <CalendarDays size={18} /> 設定したシフトを反映
-            </button>
+          {/* 💡 ボタンの配置をアップデート！ */}
+          <div className="flex flex-col gap-3 mb-6">
             
-            {Object.keys(pastAvailabilities).length > 0 ? (
-              <button onClick={applySmartCopy} className="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 text-blue-700 dark:text-blue-400 text-sm font-bold rounded-lg border border-blue-200 dark:border-blue-800/50 shadow-sm transition">
-                <History size={18} /> 他の予定からスマートコピー
+            {/* 🌟 ここがポイント！ログインしている時だけこの緑ボタンを表示する！ */}
+            {isGoogleLoggedIn && (
+              <button 
+                onClick={applyGoogleCalendar} 
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-400 text-base font-bold rounded-xl border-2 border-emerald-200 dark:border-emerald-800/50 shadow-sm transition disabled:opacity-50"
+              >
+                <CalendarCheck size={20} /> 
+                {loading ? '同期中...' : 'Googleカレンダーの予定を自動で反映する'}
               </button>
-            ) : (
-              <div className="w-full flex items-center justify-center gap-2 py-3 bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs font-bold rounded-lg border border-gray-200 dark:border-gray-700">
-                <History size={16} /> 過去の予定はありません
-              </div>
             )}
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button onClick={applyWeeklyRoutine} className="w-full flex items-center justify-center gap-2 py-3 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 text-purple-700 dark:text-purple-400 text-sm font-bold rounded-lg border border-purple-200 dark:border-purple-800/50 shadow-sm transition">
+                <CalendarDays size={18} /> 設定したシフトを反映
+              </button>
+              
+              {Object.keys(pastAvailabilities).length > 0 ? (
+                <button onClick={applySmartCopy} className="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 text-blue-700 dark:text-blue-400 text-sm font-bold rounded-lg border border-blue-200 dark:border-blue-800/50 shadow-sm transition">
+                  <History size={18} /> 他の予定からコピー
+                </button>
+              ) : (
+                <div className="w-full flex items-center justify-center gap-2 py-3 bg-gray-50 dark:bg-gray-800 text-gray-400 dark:text-gray-500 text-xs font-bold rounded-lg border border-gray-200 dark:border-gray-700">
+                  <History size={16} /> 過去の予定はありません
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 💡 ゲスト回答画面でも同じ日付を線とバッジでまとめる！ */}

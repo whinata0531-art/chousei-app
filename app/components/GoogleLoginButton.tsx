@@ -9,6 +9,11 @@ export default function GoogleLoginButton() {
       options: {
         // 💡 ここが超重要！「カレンダーを読み取る許可」をもらうための呪文！
         scopes: 'https://www.googleapis.com/auth/calendar.readonly',
+        // 💡 この3行を追加！！（有効期限を気にせずカレンダーを見れるようにする魔法）
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
         // ログインが終わったらアプリのトップページに戻ってくる設定
         redirectTo: `${window.location.origin}/` 
       }
