@@ -460,7 +460,7 @@ export default function TopPage() {
                   onClick={() => setShowCalendar(!showCalendar)} 
                   className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold border transition-colors ${showCalendar ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800/50 text-blue-600 dark:text-blue-400' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                 >
-                  <CalendarIcon size={18} /> {showCalendar ? 'カレンダーを閉じる' : 'カレンダーから日付を追加する'}
+                  <CalendarIcon size={18} /> {showCalendar ? 'カレンダーを閉じる' : '日付を追加する'}
                 </button>
 
                 {showCalendar && (
