@@ -171,11 +171,21 @@ export function useEventLogic(eventId: string) {
     setFetchingSchedules(false);
   };
 
+ // 💡 修正ポイント：スマートでマイルドな確認メッセージ！
   const toggleConfirmSlot = async (slotId: string, currentIsConfirmed: boolean, startAt: string, endAt: string) => {
     const isConfirming = !currentIsConfirmed;
-    const confirmMessage = isConfirming 
-      ? 'この日程を仮確定にしますか？\n（ログイン中の参加者全員のカレンダーに自動追加されます！）' 
-      : 'この日程の仮確定を解除しますか？\n（参加者全員のカレンダーから自動で削除されます！）';
+    
+    // ログイン状態に合わせてメッセージを切り替える！
+    let confirmMessage = '';
+    if (isConfirming) {
+      confirmMessage = isGoogleLoggedIn 
+        ? 'この日程を仮確定にしますか？\n（カレンダーにも同期されます📅）' 
+        : 'この日程を仮確定にしますか？';
+    } else {
+      confirmMessage = isGoogleLoggedIn 
+        ? '仮確定を解除しますか？\n（カレンダーの同期も解除されます）' 
+        : 'この日程の仮確定を解除しますか？';
+    }
       
     if (!confirm(confirmMessage)) return;
     setLoading(true);
