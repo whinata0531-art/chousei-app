@@ -1,13 +1,55 @@
-// app/components/MyScheduleTab.tsx
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { CalendarCheck } from 'lucide-react';
+import { CalendarCheck, ChevronDown, ChevronRight } from 'lucide-react';
 import { getFixedDate, formatSlotTime } from '@/lib/utils';
-import { useEventLogic } from '../hooks/useEventLogic';
+import { useEventLogic } from '@/app/hooks/useEventLogic';
 
 type Props = { logic: ReturnType<typeof useEventLogic> };
 
 export default function MyScheduleTab({ logic }: Props) {
+  // 💡 見た目だけの状態（過去の予定を開くかどうか）はここで管理！
+  const [showPast, setShowPast] = useState(false);
+
+  // 💡 今の時間と比べて、「これからの予定」と「終わった予定」に分ける！
+  const now = new Date();
+  const upcomingSchedules = logic.mySchedules.filter(s => getFixedDate(s.end_at) >= now);
+  const pastSchedules = logic.mySchedules.filter(s => getFixedDate(s.end_at) < now);
+
+  const renderSchedule = (schedule: any, i: number, list: any[]) => {
+    const isFirstOfDay = i === 0 || format(getFixedDate(list[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
+    return (
+      <div key={schedule.id}>
+        {isFirstOfDay && (
+          <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 mt-4 border-b dark:border-gray-700 pb-1">
+            {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
+          </h3>
+        )}
+        <div className="block bg-white dark:bg-gray-800/80 border-2 border-yellow-300 dark:border-yellow-600/50 p-4 rounded-xl shadow-sm">
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-yellow-500 dark:bg-yellow-600 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
+              <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100">{formatSlotTime(schedule.start_at, schedule.end_at)}</span>
+            </div>
+          </div>
+          <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
+          
+          {logic.isGoogleLoggedIn && (
+            <div className="mt-3 pt-3 border-t dark:border-gray-700 text-right">
+              <button 
+                onClick={() => logic.addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle)} 
+                disabled={logic.loading} 
+                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm"
+              >
+                📅 Googleカレンダーに追加
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-yellow-400 dark:border-yellow-500">
@@ -15,39 +57,38 @@ export default function MyScheduleTab({ logic }: Props) {
           <CalendarCheck size={24} />
           <h2 className="text-xl font-bold dark:text-gray-100">あなたが参加する確定予定</h2>
         </div>
-        {logic.fetchingSchedules ? <p className="text-center text-gray-500 py-10">読み込み中...</p> : logic.mySchedules.length === 0 ? (
+        
+        {logic.fetchingSchedules ? (
+          <p className="text-center text-gray-500 py-10">読み込み中...</p>
+        ) : logic.mySchedules.length === 0 ? (
           <div className="text-center py-6 bg-gray-50 dark:bg-gray-800 rounded-lg"><p className="text-gray-500 font-bold">まだ確定した予定はありません。</p></div>
         ) : (
           <div className="space-y-4">
-            {logic.mySchedules.map((schedule, i) => {
-              const isFirstOfDay = i === 0 || format(getFixedDate(logic.mySchedules[i - 1].start_at), 'yyyy-MM-dd') !== format(getFixedDate(schedule.start_at), 'yyyy-MM-dd');
-              return (
-                <div key={schedule.id}>
-                  {isFirstOfDay && <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 mt-4 border-b dark:border-gray-700 pb-1">{format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}</h3>}
-                  <div className="block bg-white dark:bg-gray-800/80 border-2 border-yellow-300 dark:border-yellow-600/50 p-4 rounded-xl shadow-sm">
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs bg-yellow-500 dark:bg-yellow-600 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
-                        <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100">{formatSlotTime(schedule.start_at, schedule.end_at)}</span>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
-                    
-                    {logic.isGoogleLoggedIn && (
-                      <div className="mt-3 pt-3 border-t dark:border-gray-700 text-right">
-                        <button 
-                          onClick={() => logic.addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle)} 
-                          disabled={logic.loading} 
-                          className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm"
-                        >
-                          📅 Googleカレンダーに追加
-                        </button>
-                      </div>
-                    )}
+            {/* 💡 今後の予定だけをデフォルトで表示！ */}
+            {upcomingSchedules.length > 0 ? (
+              upcomingSchedules.map((s, i) => renderSchedule(s, i, upcomingSchedules))
+            ) : (
+              <p className="text-center text-gray-500 font-bold py-4">今後の予定はありません。</p>
+            )}
+
+            {/* 💡 過去の予定がある場合だけ、アコーディオンボタンを出す！ */}
+            {pastSchedules.length > 0 && (
+              <div className="pt-6 mt-4 border-t border-gray-100 dark:border-gray-800">
+                <button 
+                  onClick={() => setShowPast(!showPast)} 
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-xl transition-colors border border-gray-200 dark:border-gray-700"
+                >
+                  {showPast ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  終了した過去の予定 ({pastSchedules.length}件)
+                </button>
+                
+                {showPast && (
+                  <div className="mt-4 space-y-4 animate-fade-in">
+                    {pastSchedules.map((s, i) => renderSchedule(s, i, pastSchedules))}
                   </div>
-                </div>
-              );
-            })}
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
