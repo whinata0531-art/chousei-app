@@ -63,9 +63,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   useEffect(() => {
     const fetchAll = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setIsGoogleLoggedIn(true);
-      }
+      if (session?.user) setIsGoogleLoggedIn(true);
 
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
@@ -91,7 +89,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         sData.forEach(s => initialAnswers[s.id] = 'maru'); 
 
         const { data: existingResponse } = await supabase.from('responses').select('id, guest_name').eq('event_id', eventId).eq('guest_id', currentGuestId).single();
-
         let loadedAnswers = { ...initialAnswers };
 
         if (existingResponse) {
@@ -112,18 +109,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           const parsed: Record<string, PastAvailability> = {};
           copies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
           setPastAvailabilities(parsed);
-        }
-
-        const confirmedSlots = sData.filter(s => s.is_confirmed);
-        if (confirmedSlots.length > 0 && existingResponse) {
-          const copyUpserts: any[] = [];
-          const now = Date.now();
-          confirmedSlots.forEach(slot => {
-            if (loadedAnswers[slot.id] === 'maru' || loadedAnswers[slot.id] === 'sankaku') {
-              copyUpserts.push({ guest_id: currentGuestId, time_key: `${slot.start_at}_${slot.end_at}`, status: 'batsu', updated_at: now });
-            }
-          });
-          if (copyUpserts.length > 0) await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
         }
       }
 
@@ -212,13 +197,79 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setFetchingSchedules(false);
   };
 
-  const toggleConfirmSlot = async (slotId: string, currentIsConfirmed: boolean) => {
-    if (!confirm(currentIsConfirmed ? 'この日程の仮確定を解除しますか？' : 'この日程を仮確定にしますか？\n（マイページに反映され、他イベントのスマートコピーでは❌になります）')) return;
+  // 🌟 NEW: 全員を巻き込む全自動・仮確定ボタン！
+  const toggleConfirmSlot = async (slotId: string, currentIsConfirmed: boolean, startAt: string, endAt: string) => {
+    const isConfirming = !currentIsConfirmed;
+    const confirmMessage = isConfirming 
+      ? 'この日程を仮確定にしますか？\n（カレンダーに自動で追加されます！）' 
+      : 'この日程の仮確定を解除しますか？\n（カレンダーから自動で削除されます！）';
+      
+    if (!confirm(confirmMessage)) return;
     setLoading(true);
-    await supabase.from('slots').update({ is_confirmed: !currentIsConfirmed }).eq('id', slotId);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const providerToken = session?.provider_token;
+
+    // 💡 Google連携済みの時だけ、裏側で参加者全員のカレンダーを操作する！
+    if (providerToken) {
+      const sTime = getFixedDate(startAt).toISOString();
+      const eTime = getFixedDate(endAt).toISOString();
+      const gEventTitle = `[最強調整] ${event.title}`;
+
+      if (isConfirming) {
+        // 💡 データベースから「ログイン済みでメアドが登録されてる参加者」のメアドを全員分かき集める！
+        const { data: responsesData } = await supabase
+          .from('responses')
+          .select('email')
+          .eq('event_id', eventId)
+          .not('email', 'is', null);
+          
+        // 💡 GoogleAPIが求める「attendees」の形に変換する
+        const attendeesList = responsesData?.map(r => ({ email: r.email })) || [];
+
+        // 📌 ONにする：ホストのカレンダーに作成しつつ、全員を「招待」する！
+        const gEvent = {
+          summary: gEventTitle,
+          start: { dateTime: sTime },
+          end: { dateTime: eTime },
+          attendees: attendeesList, // 💡 ここに全員のメアドをぶち込む！
+        };
+
+        // ※sendUpdates=all をつけると参加者に「招待メール」が飛ぶよ！（不要なら消してもOK）
+        await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${providerToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(gEvent),
+        });
+      } else {
+        // 📌 OFFにする：ホストのカレンダーから削除する（＝招待客の予定も連動して消滅する！）
+        try {
+          const searchRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(sTime)}&timeMax=${encodeURIComponent(eTime)}`, {
+            headers: { Authorization: `Bearer ${providerToken}` }
+          });
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            for (const item of searchData.items || []) {
+              if (item.summary === gEventTitle) {
+                await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${item.id}?sendUpdates=all`, {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${providerToken}` }
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error('カレンダーの削除に失敗:', e);
+        }
+      }
+    }
+
+    // SupabaseのDBを更新
+    await supabase.from('slots').update({ is_confirmed: isConfirming }).eq('id', slotId);
     window.location.reload(); 
   };
 
+  // 〜〜〜 applyWeeklyRoutine, applySmartCopy はそのまま 〜〜〜
   const applyWeeklyRoutine = () => {
     const savedRoutine = localStorage.getItem('weeklyRoutine');
     if (!savedRoutine) return alert('「⚙️設定」から固定シフトを登録してね！');
@@ -245,22 +296,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       });
 
       if (overlaps.length > 0) {
-        let hasBatsu = false;
-        let hasSankaku = false;
-        let allCovered = true;
-        let anyCovered = false;
-
+        let hasBatsu = false; let hasSankaku = false; let allCovered = true; let anyCovered = false;
         for (let t = sStart; t < sEnd; t += 60000) {
           const coveringPast = overlaps.find(o => o.start <= t && t < o.end);
           if (coveringPast) {
             anyCovered = true;
             if (coveringPast.status === 'batsu') hasBatsu = true;
             if (coveringPast.status === 'sankaku') hasSankaku = true;
-          } else {
-            allCovered = false; 
-          }
+          } else { allCovered = false; }
         }
-
         if (anyCovered) {
           if (hasBatsu) { newAnswers[slot.id] = 'batsu'; appliedCount++; }
           else if (hasSankaku) { newAnswers[slot.id] = 'sankaku'; appliedCount++; }
@@ -292,7 +336,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       if (overlaps.length > 0) {
         overlaps.sort((a, b) => b.updated - a.updated);
         let hasBatsu = false; let hasSankaku = false; let allCovered = true; let anyCovered = false;
-
         for (let t = sStart; t < sEnd; t += 60000) {
           const coveringPast = overlaps.find(o => o.start <= t && t < o.end);
           if (coveringPast) {
@@ -301,7 +344,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             if (coveringPast.status === 'sankaku') hasSankaku = true;
           } else { allCovered = false; }
         }
-
         if (anyCovered) {
           if (hasBatsu) { newAnswers[slot.id] = 'batsu'; appliedCount++; }
           else if (hasSankaku) { newAnswers[slot.id] = 'sankaku'; appliedCount++; }
@@ -341,17 +383,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       slots.forEach(slot => {
         const sStart = getFixedDate(slot.start_at).getTime();
         const sEnd = getFixedDate(slot.end_at).getTime();
-
         const hasConflict = gEvents.some((ge: any) => {
           const gStart = new Date(ge.start).getTime();
           const gEnd = new Date(ge.end).getTime();
           return Math.max(sStart, gStart) < Math.min(sEnd, gEnd);
         });
 
-        if (hasConflict) {
-          newAnswers[slot.id] = 'batsu';
-          appliedCount++;
-        }
+        if (hasConflict) { newAnswers[slot.id] = 'batsu'; appliedCount++; }
       });
 
       if (appliedCount > 0) {
@@ -360,50 +398,28 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       } else {
         alert('候補日程とGoogleカレンダーの予定は被っていませんでした！✨');
       }
-    } catch (error) {
-      alert('カレンダーの同期中にエラーが起きちゃいました💦');
-    }
+    } catch (error) { alert('カレンダーの同期中にエラーが起きちゃいました💦'); }
     setLoading(false);
   };
 
-  const addSlotToGoogleCalendar = async (startAt: string, endAt: string, title: string) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const providerToken = session?.provider_token;
-
-    if (!providerToken) return alert('Googleカレンダーに追加するには、「設定」からもう一度Googleでログインしてね！');
-
-    setLoading(true);
-    try {
-      const gEvent = {
-        summary: `[最強調整] ${title}`,
-        start: { dateTime: getFixedDate(startAt).toISOString() },
-        end: { dateTime: getFixedDate(endAt).toISOString() },
-      };
-
-      const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${providerToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(gEvent),
-      });
-
-      if (res.ok) alert('🎉 Googleカレンダーに予定をバッチリ追加したよ！');
-      else alert('カレンダーへの追加に失敗しちゃいました💦');
-    } catch (error) {
-      alert('通信エラーが起きました💦');
-    }
-    setLoading(false);
-  };
-
+  // 🌟 NEW: 回答送信時にメアドも一緒に保存する！
   const handleSubmit = async () => {
     if (!guestName) return alert('名前を入力してね！');
     setLoading(true);
 
+    // 💡 ログインしてたらメアドを取得する
+    const { data: { session } } = await supabase.auth.getSession();
+    const userEmail = session?.user?.email || null;
+
     const { data: resData } = await supabase
       .from('responses')
-      .upsert({ event_id: eventId, guest_id: deviceGuestId, guest_name: guestName, updated_at: new Date().toISOString() }, { onConflict: 'event_id,guest_id' })
+      .upsert({ 
+        event_id: eventId, 
+        guest_id: deviceGuestId, 
+        guest_name: guestName, 
+        email: userEmail, // 💡 ここでメアドをDBに保存！
+        updated_at: new Date().toISOString() 
+      }, { onConflict: 'event_id,guest_id' })
       .select('id').single();
 
     if (resData) {
@@ -518,7 +534,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         )}
       </div>
 
-      {/* 💡 修正ポイント：上部の大きなアラート枠 */}
       {isEventConfirmed && activeTab !== 'my-schedule' && (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border-4 border-yellow-400 dark:border-yellow-600/50 p-6 rounded-2xl shadow-md text-center">
           <div className="flex items-center justify-center gap-2 text-yellow-600 dark:text-yellow-400 mb-2">
@@ -603,7 +618,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <div className="flex-1 h-px bg-blue-200 dark:bg-gray-700"></div>
                     </div>
                   )}
-                  {/* 💡 修正ポイント：回答タブの枠色とバッジ */}
                   <div className={`p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-600/50' : 'bg-white dark:bg-gray-900 dark:border-gray-700'}`}>
                     <div className="text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2">
                       {slot.is_confirmed && <span className="bg-yellow-500 dark:bg-yellow-600 text-xs px-2 py-1 rounded font-bold text-white shadow-sm">仮確定</span>}
@@ -661,7 +675,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 <div className="space-y-4">
                   {sortedAndFilteredSlots.map((slot, i) => {
                     const tier = getSlotTier(slot);
-                    // 💡 修正ポイント：集計タブのリスト色
                     const highlightClass = 
                       tier === 1 ? 'bg-green-50 border-green-400 ring-2 ring-green-200 dark:bg-green-900/30 dark:border-green-600 dark:ring-green-800/50' :
                       tier === 2 ? 'bg-orange-50 border-orange-300 dark:bg-yellow-900/20 dark:border-yellow-600/50' :
@@ -671,7 +684,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <div key={slot.id} className={`p-4 border rounded-xl flex flex-col gap-4 transition-all ${slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-400 dark:border-yellow-600/50 shadow-md transform scale-[1.02]' : highlightClass}`}>
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div>
-                            {/* 💡 修正ポイント：✨ 仮確定 ✨ のバッジ */}
                             {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 dark:bg-yellow-600 text-white text-xs font-bold rounded-full mb-2 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
                             {!slot.is_confirmed && tier === 1 && <span className="inline-block px-2 py-1 bg-green-500 text-white text-xs font-bold rounded mb-1 shadow-sm">🌟 おすすめ</span>}
                             <div className="font-bold text-lg dark:text-gray-100">
@@ -685,24 +697,13 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                           </div>
                         </div>
 
-                        {/* 💡 修正ポイント：仮確定にするボタンの色 */}
                         <div className="border-t border-gray-200/60 dark:border-gray-700 pt-3 mt-1 text-right flex justify-end gap-2">
                           <button 
-                            onClick={() => toggleConfirmSlot(slot.id, slot.is_confirmed)}
+                            onClick={() => toggleConfirmSlot(slot.id, slot.is_confirmed, slot.start_at, slot.end_at)}
                             className={`px-4 py-2 text-sm font-bold rounded-lg shadow transition-colors ${slot.is_confirmed ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600' : 'bg-yellow-400 dark:bg-yellow-500/80 text-yellow-900 dark:text-yellow-50 hover:bg-yellow-500 dark:hover:bg-yellow-500'}`}
                           >
                             {slot.is_confirmed ? '仮確定を解除' : '📌 仮確定にする'}
                           </button>
-                          
-                          {slot.is_confirmed && isGoogleLoggedIn && (
-                            <button 
-                              onClick={() => addSlotToGoogleCalendar(slot.start_at, slot.end_at, event.title)} 
-                              disabled={loading} 
-                              className="px-4 py-2 text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 rounded-lg shadow transition-colors"
-                            >
-                              📅 カレンダーに追加
-                            </button>
-                          )}
                         </div>
                       </div>
                     );
@@ -725,7 +726,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       <th className="p-3 border-b-2 bg-gray-50 dark:bg-gray-800 font-bold text-gray-700 dark:text-gray-300 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">名前</th>
                       {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
                         const tier = getSlotTier(slot);
-                        // 💡 修正ポイント：マトリックスのヘッダー色
                         const headerClass = 
                           slot.is_confirmed ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700/50' :
                           tier === 1 ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700' :
@@ -748,7 +748,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                         <td className="p-3 border-b dark:border-gray-700 font-medium sticky left-0 bg-white dark:bg-gray-900 dark:text-gray-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.guestName}</td>
                         {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
                           const tier = getSlotTier(slot);
-                          // 💡 修正ポイント：マトリックスのセル色
                           const cellClass = 
                             slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20' :
                             tier === 1 ? 'bg-green-50 dark:bg-green-900/20' :
@@ -770,7 +769,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       {activeTab === 'my-schedule' && (
         <div className="space-y-6">
-          {/* 💡 修正ポイント：マイ予定のカード外枠 */}
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-yellow-400 dark:border-yellow-500">
             <div className="flex items-center gap-2 mb-6 text-yellow-600 dark:text-yellow-500">
               <CalendarCheck size={24} />
@@ -785,28 +783,14 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   return (
                     <div key={schedule.id}>
                       {isFirstOfDay && <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 mt-4 border-b dark:border-gray-700 pb-1">{format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}</h3>}
-                      {/* 💡 修正ポイント：マイ予定のカード中身 */}
                       <div className="block bg-white dark:bg-gray-800/80 border-2 border-yellow-300 dark:border-yellow-600/50 p-4 rounded-xl shadow-sm">
                         <div className="flex justify-between items-center mb-2">
                           <div className="flex items-center gap-2">
-                            {/* 💡 修正ポイント：バッジ */}
                             <span className="text-xs bg-yellow-500 dark:bg-yellow-600 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
                             <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100">{formatSlotTime(schedule.start_at, schedule.end_at)}</span>
                           </div>
                         </div>
                         <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
-                        
-                        {isGoogleLoggedIn && (
-                          <div className="mt-3 pt-3 border-t dark:border-gray-700 text-right">
-                            <button 
-                              onClick={() => addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle)} 
-                              disabled={loading} 
-                              className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm"
-                            >
-                              📅 Googleカレンダーに追加
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
