@@ -8,7 +8,7 @@ export default function GoogleLoginButton() {
       provider: 'google',
       options: {
         // 💡 ここが超重要！「カレンダーを読み取る許可」をもらうための呪文！
-        scopes: 'https://www.googleapis.com/auth/calendar.readonly',
+        scopes: 'https://www.googleapis.com/auth/calendar',
         // 💡 この3行を追加！！（有効期限を気にせずカレンダーを見れるようにする魔法）
         queryParams: {
           access_type: 'offline',

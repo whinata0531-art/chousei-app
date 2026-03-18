@@ -7,7 +7,7 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { use } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, Pin, CalendarCheck, History, CalendarDays, Trash2, Settings, Home, ArrowUp, Edit3, Check } from 'lucide-react'; // 💡 新しいアイコン追加！
+import { ChevronDown, ChevronRight, Pin, CalendarCheck, History, CalendarDays, Trash2, Settings, Home, ArrowUp, Edit3, Check } from 'lucide-react';
 
 type Slot = { id: string; start_at: string; end_at: string; is_confirmed: boolean };
 type Status = 'maru' | 'sankaku' | 'batsu';
@@ -53,23 +53,20 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [fetchingSchedules, setFetchingSchedules] = useState(false);
   const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
 
-  const [showScrollTop, setShowScrollTop] = useState(false); // 💡 スクロールボタン用
-  
-  // 💡 NEW: Googleにログインしているかどうかの判定用フラグ！
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [isGoogleLoggedIn, setIsGoogleLoggedIn] = useState(false);
 
-  // 💡 タイトル編集用
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleStr, setEditTitleStr] = useState('');
-  const [editDescStr, setEditDescStr] = useState(''); // 💡 メモ編集用を追加！
+  const [editDescStr, setEditDescStr] = useState('');
 
   useEffect(() => {
     const fetchAll = async () => {
-      // 💡 NEW: ここでログイン状態をチェックして、フラグをONにする！
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setIsGoogleLoggedIn(true);
       }
+
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
         currentGuestId = crypto.randomUUID();
@@ -140,12 +137,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     return () => window.removeEventListener('scroll', handleScroll);
   }, [eventId]);
 
-const fetchRecentEvents = async (guestId: string) => {
+  const fetchRecentEvents = async (guestId: string) => {
     const { data } = await supabase.from('user_recent_events').select('*').eq('guest_id', guestId).order('accessed_at', { ascending: false }).limit(10);
     if (data) setRecentEvents(data.map((d: any) => ({ id: d.event_id, title: d.event_title, lastAccessed: d.accessed_at })));
   };
 
-  // 💡 消えていた履歴削除関数を復活！
   const removeRecentEvent = async (e: React.MouseEvent, targetEventId: string) => {
     e.preventDefault();
     if (!confirm('このイベントを履歴から削除しますか？')) return;
@@ -153,7 +149,6 @@ const fetchRecentEvents = async (guestId: string) => {
     setRecentEvents(prev => prev.filter(re => re.id !== targetEventId));
   };
 
-  // 💡 タイトルとメモを保存する関数を追加！
   const handleSaveEventInfo = async () => {
     if (!editTitleStr.trim()) return alert('タイトルを入力してください');
     setLoading(true);
@@ -226,9 +221,7 @@ const fetchRecentEvents = async (guestId: string) => {
 
   const applyWeeklyRoutine = () => {
     const savedRoutine = localStorage.getItem('weeklyRoutine');
-    if (!savedRoutine) {
-      return alert('「⚙️設定」から固定シフトを登録してね！');
-    }
+    if (!savedRoutine) return alert('「⚙️設定」から固定シフトを登録してね！');
     const routine: WeeklyRoutine = JSON.parse(savedRoutine);
     const newAnswers = { ...answers };
     let appliedCount = 0;
@@ -248,9 +241,7 @@ const fetchRecentEvents = async (guestId: string) => {
       rSlots.forEach(rs => {
         const pStart = rs.isAllDay ? new Date(`${baseDateStr}T00:00:00`).getTime() : new Date(`${baseDateStr}T${rs.start}:00`).getTime();
         const pEnd = rs.isAllDay ? new Date(`${baseDateStr}T23:59:00`).getTime() : new Date(`${baseDateStr}T${rs.end}:00`).getTime();
-        if (Math.max(sStart, pStart) < Math.min(sEnd, pEnd)) {
-          overlaps.push({ start: pStart, end: pEnd, status: rs.status });
-        }
+        if (Math.max(sStart, pStart) < Math.min(sEnd, pEnd)) overlaps.push({ start: pStart, end: pEnd, status: rs.status });
       });
 
       if (overlaps.length > 0) {
@@ -295,19 +286,12 @@ const fetchRecentEvents = async (guestId: string) => {
         const [pStartStr, pEndStr] = key.split('_');
         const pStart = getFixedDate(pStartStr).getTime();
         const pEnd = getFixedDate(pEndStr).getTime();
-        
-        if (Math.max(sStart, pStart) < Math.min(sEnd, pEnd)) {
-          overlaps.push({ start: pStart, end: pEnd, status: past.status, updated: past.updated });
-        }
+        if (Math.max(sStart, pStart) < Math.min(sEnd, pEnd)) overlaps.push({ start: pStart, end: pEnd, status: past.status, updated: past.updated });
       });
 
       if (overlaps.length > 0) {
         overlaps.sort((a, b) => b.updated - a.updated);
-
-        let hasBatsu = false;
-        let hasSankaku = false;
-        let allCovered = true;
-        let anyCovered = false;
+        let hasBatsu = false; let hasSankaku = false; let allCovered = true; let anyCovered = false;
 
         for (let t = sStart; t < sEnd; t += 60000) {
           const coveringPast = overlaps.find(o => o.start <= t && t < o.end);
@@ -315,9 +299,7 @@ const fetchRecentEvents = async (guestId: string) => {
             anyCovered = true;
             if (coveringPast.status === 'batsu') hasBatsu = true;
             if (coveringPast.status === 'sankaku') hasSankaku = true;
-          } else {
-            allCovered = false;
-          }
+          } else { allCovered = false; }
         }
 
         if (anyCovered) {
@@ -332,26 +314,20 @@ const fetchRecentEvents = async (guestId: string) => {
     alert(`クラウドの予定を優先して ${appliedCount} 件の回答を推測したよ！\n※念のためズレがないか確認してね！`);
   };
 
-  // 🌟 NEW: Googleカレンダーから予定を取ってきて、被ってる時間を❌にする最強魔法！
   const applyGoogleCalendar = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const providerToken = session?.provider_token;
 
-    if (!providerToken) {
-      return alert('Googleカレンダーと同期するには、「設定」からもう一度Googleでログイン（再認証）してね！');
-    }
-
+    if (!providerToken) return alert('Googleカレンダーと同期するには、「設定」からもう一度Googleでログイン（再認証）してね！');
     if (slots.length === 0) return;
     setLoading(true);
 
     try {
-      // 候補日程の中で「一番早い時間」と「一番遅い時間」を計算（通信を軽くするため！）
       const startDates = slots.map(s => getFixedDate(s.start_at).getTime());
       const endDates = slots.map(s => getFixedDate(s.end_at).getTime());
       const minDate = new Date(Math.min(...startDates)).toISOString();
       const maxDate = new Date(Math.max(...endDates)).toISOString();
 
-      // カレンダーの予定を取ってくる！
       const gEvents = await fetchGoogleCalendarEvents(providerToken, minDate, maxDate);
 
       if (gEvents.length === 0) {
@@ -362,12 +338,10 @@ const fetchRecentEvents = async (guestId: string) => {
       let appliedCount = 0;
       const newAnswers = { ...answers };
 
-      // 候補日程を1つずつチェック！
       slots.forEach(slot => {
         const sStart = getFixedDate(slot.start_at).getTime();
         const sEnd = getFixedDate(slot.end_at).getTime();
 
-        // Googleの予定と1ミリ秒でも被っていたらアウト（❌）判定！
         const hasConflict = gEvents.some((ge: any) => {
           const gStart = new Date(ge.start).getTime();
           const gEnd = new Date(ge.end).getTime();
@@ -389,7 +363,37 @@ const fetchRecentEvents = async (guestId: string) => {
     } catch (error) {
       alert('カレンダーの同期中にエラーが起きちゃいました💦');
     }
+    setLoading(false);
+  };
 
+  const addSlotToGoogleCalendar = async (startAt: string, endAt: string, title: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const providerToken = session?.provider_token;
+
+    if (!providerToken) return alert('Googleカレンダーに追加するには、「設定」からもう一度Googleでログインしてね！');
+
+    setLoading(true);
+    try {
+      const gEvent = {
+        summary: `[最強調整] ${title}`,
+        start: { dateTime: getFixedDate(startAt).toISOString() },
+        end: { dateTime: getFixedDate(endAt).toISOString() },
+      };
+
+      const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${providerToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(gEvent),
+      });
+
+      if (res.ok) alert('🎉 Googleカレンダーに予定をバッチリ追加したよ！');
+      else alert('カレンダーへの追加に失敗しちゃいました💦');
+    } catch (error) {
+      alert('通信エラーが起きました💦');
+    }
     setLoading(false);
   };
 
@@ -428,18 +432,7 @@ const fetchRecentEvents = async (guestId: string) => {
     window.location.href = '/'; 
   };
 
-  // 💡 上に戻る処理
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
-
-  // 💡 タイトル保存処理
-  const handleSaveTitle = async () => {
-    if (!editTitleStr.trim()) return alert('タイトルを入力してください');
-    setLoading(true);
-    await supabase.from('events').update({ title: editTitleStr }).eq('id', eventId);
-    setEvent({ ...event, title: editTitleStr });
-    setIsEditingTitle(false);
-    setLoading(false);
-  };
 
   const sortedAndFilteredSlots = useMemo(() => {
     let result = [...aggregated];
@@ -448,9 +441,8 @@ const fetchRecentEvents = async (guestId: string) => {
       if (a.is_confirmed && !b.is_confirmed) return -1;
       if (!a.is_confirmed && b.is_confirmed) return 1;
 
-      if (sortType === 'time') {
-        return getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime();
-      } else if (sortType === 'maru') {
+      if (sortType === 'time') return getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime();
+      else if (sortType === 'maru') {
         if (b.maru !== a.maru) return b.maru - a.maru;
         if (b.sankaku !== a.sankaku) return b.sankaku - a.sankaku;
         return getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime();
@@ -481,7 +473,6 @@ const fetchRecentEvents = async (guestId: string) => {
 
   const confirmedSlots = slots.filter(s => s.is_confirmed);
   const isEventConfirmed = confirmedSlots.length > 0;
-  
   const isHost = event.host_id === deviceGuestId;
 
   return (
@@ -495,7 +486,7 @@ const fetchRecentEvents = async (guestId: string) => {
         </Link>
       </div>
 
-<div className="text-center mb-6">
+      <div className="text-center mb-6">
         {isHost && isEditingTitle ? (
           <div className="flex flex-col items-center justify-center gap-2 mb-4 w-full">
             <div className="flex items-center gap-2 w-full">
@@ -527,20 +518,21 @@ const fetchRecentEvents = async (guestId: string) => {
         )}
       </div>
 
+      {/* 💡 修正ポイント：上部の大きなアラート枠 */}
       {isEventConfirmed && activeTab !== 'my-schedule' && (
-        <div className="bg-yellow-50 border-4 border-yellow-400 p-6 rounded-2xl shadow-md text-center">
-          <div className="flex items-center justify-center gap-2 text-yellow-600 mb-2">
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border-4 border-yellow-400 dark:border-yellow-600/50 p-6 rounded-2xl shadow-md text-center">
+          <div className="flex items-center justify-center gap-2 text-yellow-600 dark:text-yellow-400 mb-2">
             <Pin size={24} />
-            <h2 className="text-xl font-extrabold">仮確定の日程があります！</h2>
+            <h2 className="text-xl font-extrabold dark:text-gray-100">仮確定の日程があります！</h2>
           </div>
-          <div className="bg-white rounded-lg p-3 inline-block shadow-sm">
+          <div className="bg-white dark:bg-gray-800/80 border dark:border-gray-700 rounded-lg p-3 inline-block shadow-sm">
             {confirmedSlots.map(s => (
-              <div key={s.id} className="text-lg font-bold text-gray-800">
+              <div key={s.id} className="text-lg font-bold text-gray-800 dark:text-gray-100">
                 {format(getFixedDate(s.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(s.start_at, s.end_at)}
               </div>
             ))}
           </div>
-          <p className="text-xs text-yellow-700 mt-4 font-bold">
+          <p className="text-xs text-yellow-700 dark:text-yellow-300/80 mt-4 font-bold">
             ※マイ予定タブに追加されました！<br />
             ※他イベントのスマートコピーでは自動的に「予定あり❌」になります。
           </p>
@@ -567,10 +559,7 @@ const fetchRecentEvents = async (guestId: string) => {
               className="w-full p-3 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="名前を入力" />
           </div>
 
-          {/* 💡 ボタンの配置をアップデート！ */}
           <div className="flex flex-col gap-3 mb-6">
-            
-            {/* 🌟 ここがポイント！ログインしている時だけこの緑ボタンを表示する！ */}
             {isGoogleLoggedIn && (
               <button 
                 onClick={applyGoogleCalendar} 
@@ -578,7 +567,7 @@ const fetchRecentEvents = async (guestId: string) => {
                 className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-400 text-base font-bold rounded-xl border-2 border-emerald-200 dark:border-emerald-800/50 shadow-sm transition disabled:opacity-50"
               >
                 <CalendarCheck size={20} /> 
-                {loading ? '同期中...' : 'Googleカレンダーの予定を自動で反映する'}
+                {loading ? '同期中...' : 'Googleカレンダーの予定を自動で ❌ にする'}
               </button>
             )}
             
@@ -599,7 +588,6 @@ const fetchRecentEvents = async (guestId: string) => {
             </div>
           </div>
 
-          {/* 💡 ゲスト回答画面でも同じ日付を線とバッジでまとめる！ */}
           <div className="space-y-3 mb-6 mt-4">
             {slots.map((slot, index) => {
               const prevSlot = index > 0 ? slots[index-1] : null;
@@ -615,9 +603,10 @@ const fetchRecentEvents = async (guestId: string) => {
                       <div className="flex-1 h-px bg-blue-200 dark:bg-gray-700"></div>
                     </div>
                   )}
-                  <div className={`p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${slot.is_confirmed ? 'bg-yellow-50 border-yellow-300' : 'bg-white dark:bg-gray-900 dark:border-gray-700'}`}>
+                  {/* 💡 修正ポイント：回答タブの枠色とバッジ */}
+                  <div className={`p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-600/50' : 'bg-white dark:bg-gray-900 dark:border-gray-700'}`}>
                     <div className="text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                      {slot.is_confirmed && <span className="bg-yellow-400 text-xs px-2 py-1 rounded font-bold text-white">仮確定</span>}
+                      {slot.is_confirmed && <span className="bg-yellow-500 dark:bg-yellow-600 text-xs px-2 py-1 rounded font-bold text-white shadow-sm">仮確定</span>}
                       {formatSlotTime(slot.start_at, slot.end_at)}
                     </div>
                     <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg sm:w-64 shrink-0 gap-1">
@@ -643,7 +632,6 @@ const fetchRecentEvents = async (guestId: string) => {
       {activeTab === 'result' && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow border-t-4 border-green-500 transition-all">
-            
             <div className="sticky top-[4.5rem] z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md p-6 border-b dark:border-gray-700 shadow-sm rounded-t-xl">
               <button onClick={() => setIsSummaryOpen(!isSummaryOpen)} className="w-full flex items-center justify-between focus:outline-none">
                 <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">📊 日程ごとの集計</h2>
@@ -673,17 +661,18 @@ const fetchRecentEvents = async (guestId: string) => {
                 <div className="space-y-4">
                   {sortedAndFilteredSlots.map((slot, i) => {
                     const tier = getSlotTier(slot);
+                    // 💡 修正ポイント：集計タブのリスト色
                     const highlightClass = 
                       tier === 1 ? 'bg-green-50 border-green-400 ring-2 ring-green-200 dark:bg-green-900/30 dark:border-green-600 dark:ring-green-800/50' :
-                      // 1箇所目（リスト）
                       tier === 2 ? 'bg-orange-50 border-orange-300 dark:bg-yellow-900/20 dark:border-yellow-600/50' :
                       'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700';
 
                     return (
-                      <div key={slot.id} className={`p-4 border rounded-xl flex flex-col gap-4 transition-all ${slot.is_confirmed ? 'bg-yellow-100 border-yellow-400 shadow-md transform scale-[1.02]' : highlightClass}`}>
+                      <div key={slot.id} className={`p-4 border rounded-xl flex flex-col gap-4 transition-all ${slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-400 dark:border-yellow-600/50 shadow-md transform scale-[1.02]' : highlightClass}`}>
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div>
-                            {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded-full mb-2 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
+                            {/* 💡 修正ポイント：✨ 仮確定 ✨ のバッジ */}
+                            {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 dark:bg-yellow-600 text-white text-xs font-bold rounded-full mb-2 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
                             {!slot.is_confirmed && tier === 1 && <span className="inline-block px-2 py-1 bg-green-500 text-white text-xs font-bold rounded mb-1 shadow-sm">🌟 おすすめ</span>}
                             <div className="font-bold text-lg dark:text-gray-100">
                               {format(getFixedDate(slot.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(slot.start_at, slot.end_at)}
@@ -696,13 +685,24 @@ const fetchRecentEvents = async (guestId: string) => {
                           </div>
                         </div>
 
-                        <div className="border-t border-gray-200/60 dark:border-gray-700 pt-3 mt-1 text-right">
+                        {/* 💡 修正ポイント：仮確定にするボタンの色 */}
+                        <div className="border-t border-gray-200/60 dark:border-gray-700 pt-3 mt-1 text-right flex justify-end gap-2">
                           <button 
                             onClick={() => toggleConfirmSlot(slot.id, slot.is_confirmed)}
-                            className={`px-4 py-2 text-sm font-bold rounded-lg shadow transition-colors ${slot.is_confirmed ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500'}`}
+                            className={`px-4 py-2 text-sm font-bold rounded-lg shadow transition-colors ${slot.is_confirmed ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600' : 'bg-yellow-400 dark:bg-yellow-500/80 text-yellow-900 dark:text-yellow-50 hover:bg-yellow-500 dark:hover:bg-yellow-500'}`}
                           >
                             {slot.is_confirmed ? '仮確定を解除' : '📌 仮確定にする'}
                           </button>
+                          
+                          {slot.is_confirmed && isGoogleLoggedIn && (
+                            <button 
+                              onClick={() => addSlotToGoogleCalendar(slot.start_at, slot.end_at, event.title)} 
+                              disabled={loading} 
+                              className="px-4 py-2 text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 rounded-lg shadow transition-colors"
+                            >
+                              📅 カレンダーに追加
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -713,7 +713,6 @@ const fetchRecentEvents = async (guestId: string) => {
             )}
           </div>
 
-          {/* 💡 ダークモードのマトリックス白文字バグを完全に修正！(dark:bg-gray-900 dark:text-gray-100 等を追加) */}
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-6 overflow-hidden">
             <h2 className="text-xl font-bold mb-4 dark:text-gray-100">👥 回答者マトリックス</h2>
             {matrix.length === 0 ? (
@@ -726,8 +725,9 @@ const fetchRecentEvents = async (guestId: string) => {
                       <th className="p-3 border-b-2 bg-gray-50 dark:bg-gray-800 font-bold text-gray-700 dark:text-gray-300 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">名前</th>
                       {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
                         const tier = getSlotTier(slot);
+                        // 💡 修正ポイント：マトリックスのヘッダー色
                         const headerClass = 
-                          slot.is_confirmed ? 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700' :
+                          slot.is_confirmed ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700/50' :
                           tier === 1 ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700' :
                           tier === 2 ? 'bg-orange-100 dark:bg-yellow-900/30 text-orange-800 dark:text-yellow-400 border-orange-200 dark:border-yellow-700/50' : 
                           'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 dark:border-gray-700';
@@ -745,10 +745,10 @@ const fetchRecentEvents = async (guestId: string) => {
                   <tbody>
                     {matrix.map((row, i) => (
                       <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                        {/* 💡 ここの td に dark:bg-gray-900 dark:text-gray-100 を明示的に指定して白浮きを防止！ */}
                         <td className="p-3 border-b dark:border-gray-700 font-medium sticky left-0 bg-white dark:bg-gray-900 dark:text-gray-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.guestName}</td>
                         {[...aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
                           const tier = getSlotTier(slot);
+                          // 💡 修正ポイント：マトリックスのセル色
                           const cellClass = 
                             slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20' :
                             tier === 1 ? 'bg-green-50 dark:bg-green-900/20' :
@@ -768,10 +768,10 @@ const fetchRecentEvents = async (guestId: string) => {
         </div>
       )}
 
-      {/* マイ予定タブ */}
       {activeTab === 'my-schedule' && (
         <div className="space-y-6">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-yellow-400">
+          {/* 💡 修正ポイント：マイ予定のカード外枠 */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-yellow-400 dark:border-yellow-500">
             <div className="flex items-center gap-2 mb-6 text-yellow-600 dark:text-yellow-500">
               <CalendarCheck size={24} />
               <h2 className="text-xl font-bold dark:text-gray-100">あなたが参加する確定予定</h2>
@@ -785,14 +785,28 @@ const fetchRecentEvents = async (guestId: string) => {
                   return (
                     <div key={schedule.id}>
                       {isFirstOfDay && <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 mt-4 border-b dark:border-gray-700 pb-1">{format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}</h3>}
-                      <div className="block bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-600 p-4 rounded-xl shadow-sm">
+                      {/* 💡 修正ポイント：マイ予定のカード中身 */}
+                      <div className="block bg-white dark:bg-gray-800/80 border-2 border-yellow-300 dark:border-yellow-600/50 p-4 rounded-xl shadow-sm">
                         <div className="flex justify-between items-center mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
+                            {/* 💡 修正ポイント：バッジ */}
+                            <span className="text-xs bg-yellow-500 dark:bg-yellow-600 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
                             <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100">{formatSlotTime(schedule.start_at, schedule.end_at)}</span>
                           </div>
                         </div>
                         <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
+                        
+                        {isGoogleLoggedIn && (
+                          <div className="mt-3 pt-3 border-t dark:border-gray-700 text-right">
+                            <button 
+                              onClick={() => addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle)} 
+                              disabled={loading} 
+                              className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm"
+                            >
+                              📅 Googleカレンダーに追加
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -803,14 +817,13 @@ const fetchRecentEvents = async (guestId: string) => {
         </div>
       )}
 
-{isHost && (
+      {isHost && (
         <div className="mt-12 pt-6 border-t border-gray-200 dark:border-gray-700">
           <div className="bg-gray-50 dark:bg-gray-800/50 p-6 rounded-xl border border-gray-200 dark:border-gray-700 text-center space-y-6">
             <h3 className="text-gray-800 dark:text-gray-200 font-bold flex items-center justify-center gap-2">
               👑 管理者メニュー
             </h3>
             
-            {/* 💡 編集ページへのリンクを追加！ */}
             <Link href={`/event/${eventId}/edit`} className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm transition-colors">
               <Edit3 size={20} /> イベント内容・日程を編集する
             </Link>
@@ -821,14 +834,13 @@ const fetchRecentEvents = async (guestId: string) => {
               </h4>
               <p className="text-xs text-red-600 dark:text-red-500 mb-4">全員の回答データも消滅し、二度と復元できません。</p>
               <button onClick={handleDeleteEvent} className="w-full sm:w-auto px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm transition-colors text-sm">
-                本当にこのイベントを削除する
+                本当のこのイベントを削除する
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 💡 スクロール上に戻るボタン！ */}
       {showScrollTop && (
         <button onClick={scrollToTop} className="fixed bottom-6 right-6 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all z-50 animate-fade-in-up">
           <ArrowUp size={24} />
