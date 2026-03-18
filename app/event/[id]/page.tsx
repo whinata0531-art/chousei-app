@@ -201,8 +201,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const toggleConfirmSlot = async (slotId: string, currentIsConfirmed: boolean, startAt: string, endAt: string) => {
     const isConfirming = !currentIsConfirmed;
     const confirmMessage = isConfirming 
-      ? 'この日程を仮確定にしますか？\n（カレンダーに自動で追加されます！）' 
-      : 'この日程の仮確定を解除しますか？\n（カレンダーから自動で削除されます！）';
+      ? 'この日程を仮確定にしますか？' 
+      : 'この日程の仮確定を解除しますか？';
       
     if (!confirm(confirmMessage)) return;
     setLoading(true);
