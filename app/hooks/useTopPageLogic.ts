@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { addMinutes, format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, isSameDay } from 'date-fns';
-import { getFixedDate } from '@/lib/utils';
+import { getFixedDate, generateId } from '@/lib/utils';
 
 // 💡 型定義（一旦ここにまとめておくね！）
 export type HistoryItem = { title: string; slots: { startAt: string; endAt: string }[] };
@@ -19,7 +19,7 @@ export function useTopPageLogic() {
   const [description, setDescription] = useState('');
   
   const [dayBlocks, setDayBlocks] = useState<DayBlock[]>([
-    { id: crypto.randomUUID(), date: format(new Date(), 'yyyy-MM-dd'), isAllDay: false, isExpanded: true, times: [{ id: crypto.randomUUID(), start: '', end: '' }] }
+    { id: generateId(), date: format(new Date(), 'yyyy-MM-dd'), isAllDay: false, isExpanded: true, times: [{ id: generateId(), start: '', end: '' }] }
   ]);
 
   const [dayMemory, setDayMemory] = useState<Record<string, { isAllDay: boolean; times: TimeSlot[] }>>({});
@@ -59,7 +59,7 @@ export function useTopPageLogic() {
       
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
-        currentGuestId = crypto.randomUUID();
+        currentGuestId = generateId();
         localStorage.setItem('deviceGuestId', currentGuestId);
       }
       setDeviceGuestId(currentGuestId);
@@ -114,9 +114,9 @@ export function useTopPageLogic() {
   const addDayBlock = (dateStr: string = format(new Date(), 'yyyy-MM-dd')) => {
     const mem = dayMemory[dateStr];
     const newBlock: DayBlock = { 
-      id: crypto.randomUUID(), date: dateStr, 
+      id: generateId(), date: dateStr, 
       isAllDay: mem ? mem.isAllDay : false, isExpanded: true, 
-      times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }] 
+      times: mem ? mem.times : [{ id: generateId(), start: '', end: '' }] 
     };
     setDayBlocks([...dayBlocks, newBlock].sort((a, b) => a.date.localeCompare(b.date)));
   };
@@ -148,7 +148,7 @@ export function useTopPageLogic() {
           newStart = lastTime.end;
           try { newEnd = format(addMinutes(new Date(`2000-01-01T${newStart}`), 120), 'HH:mm'); } catch (e) { newEnd = '23:59'; }
         }
-        return { ...b, times: [...b.times, { id: crypto.randomUUID(), start: newStart, end: newEnd }] };
+        return { ...b, times: [...b.times, { id: generateId(), start: newStart, end: newEnd }] };
       }
       return b;
     }));
@@ -170,9 +170,9 @@ export function useTopPageLogic() {
     } else {
       const mem = dayMemory[dateStr];
       const newBlock: DayBlock = {
-        id: crypto.randomUUID(), date: dateStr,
+        id: generateId(), date: dateStr,
         isAllDay: mem ? mem.isAllDay : false, isExpanded: true,
-        times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }]
+        times: mem ? mem.times : [{ id: generateId(), start: '', end: '' }]
       };
       const newBlocks = [...dayBlocks, newBlock];
       newBlocks.sort((a, b) => a.date.localeCompare(b.date));
@@ -193,12 +193,12 @@ export function useTopPageLogic() {
         
         if (!grouped[date]) grouped[date] = { isAllDay: false, times: [] };
         if (isAllDay) grouped[date].isAllDay = true;
-        else grouped[date].times.push({ id: crypto.randomUUID(), start, end });
+        else grouped[date].times.push({ id: generateId(), start, end });
       });
 
       const newBlocks = Object.keys(grouped).map(date => ({
-        id: crypto.randomUUID(), date, isAllDay: grouped[date].isAllDay, isExpanded: true,
-        times: grouped[date].times.length > 0 ? grouped[date].times : [{ id: crypto.randomUUID(), start: '', end: '' }]
+        id: generateId(), date, isAllDay: grouped[date].isAllDay, isExpanded: true,
+        times: grouped[date].times.length > 0 ? grouped[date].times : [{ id: generateId(), start: '', end: '' }]
       }));
       newBlocks.sort((a, b) => a.date.localeCompare(b.date));
       setDayBlocks(newBlocks);
@@ -228,7 +228,7 @@ export function useTopPageLogic() {
 
         if (bulkIsAllDay) {
           if (existingBlock) { existingBlock.isAllDay = true; } 
-          else { newBlocks.push({ id: crypto.randomUUID(), date: dateStr, isAllDay: true, isExpanded: true, times: [{ id: crypto.randomUUID(), start: '', end: '' }] }); }
+          else { newBlocks.push({ id: generateId(), date: dateStr, isAllDay: true, isExpanded: true, times: [{ id: generateId(), start: '', end: '' }] }); }
         } else {
           const generatedTimes: TimeSlot[] = [];
           const dayStart = new Date(`${dateStr}T${bulkStart}`);
@@ -237,7 +237,7 @@ export function useTopPageLogic() {
           while (currentSlot < dayEnd) {
             const nextSlot = addMinutes(currentSlot, interval);
             if (nextSlot > dayEnd) break;
-            generatedTimes.push({ id: crypto.randomUUID(), start: format(currentSlot, "HH:mm"), end: format(nextSlot, "HH:mm") });
+            generatedTimes.push({ id: generateId(), start: format(currentSlot, "HH:mm"), end: format(nextSlot, "HH:mm") });
             currentSlot = nextSlot;
           }
 
@@ -248,7 +248,7 @@ export function useTopPageLogic() {
           } else {
              const mem = dayMemory[dateStr];
              const baseTimes = mem ? mem.times.filter(t => t.start && t.end) : [];
-             newBlocks.push({ id: crypto.randomUUID(), date: dateStr, isAllDay: false, isExpanded: true, times: [...baseTimes, ...generatedTimes] });
+             newBlocks.push({ id: generateId(), date: dateStr, isAllDay: false, isExpanded: true, times: [...baseTimes, ...generatedTimes] });
           }
         }
       }
