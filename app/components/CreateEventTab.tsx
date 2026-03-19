@@ -94,7 +94,7 @@ export default function CreateEventTab({ logic }: Props) {
               <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
                 <History size={14} />
                 <select onChange={(e) => { logic.loadFromHistory(e.target.value); e.target.value = ""; }} className="bg-purple-50 dark:bg-purple-900/30 border dark:border-purple-800/50 rounded p-1 max-w-[150px] outline-none">
-                  <option value="">過去の履歴からコピー</option>
+                  <option value="">履歴からコピー</option>
                   {logic.hostHistory.map((h, i) => <option key={i} value={i}>{h.title}</option>)}
                 </select>
               </div>
