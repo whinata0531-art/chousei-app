@@ -30,7 +30,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         <Link href="/" className="flex items-center gap-1 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm">
           <Home size={16} /> トップへ
         </Link>
-        <Link href="/settings" className="flex items-center gap-1 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-4 py-2 rounded-lg font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm border border-gray-200 dark:border-gray-700">
+        {/* 💡 onClickを追加して、移動する瞬間に自分の場所（トップだから '/'）をメモる！ */}
+        <Link 
+          href="/settings" 
+          onClick={() => localStorage.setItem('returnPath', window.location.pathname)}
+          className="flex items-center gap-1 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm border border-gray-200 dark:border-gray-700"
+        >
           <Settings size={16} /> 設定
         </Link>
       </div>

@@ -64,7 +64,7 @@ export default function SettingsPage() {
     { label: '土曜日', val: 6, color: 'text-blue-500' },
   ];
 
-  useEffect(() => {
+ useEffect(() => {
     let currentGuestId = localStorage.getItem('deviceGuestId');
     if (!currentGuestId) {
       currentGuestId = crypto.randomUUID();
@@ -72,11 +72,10 @@ export default function SettingsPage() {
     }
     setDeviceGuestId(currentGuestId);
 
-    const checkAuthAndMerge = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
+    // 💡 関数をちょっと書き換え！（sessionを引数でもらうようにしたよ）
+    const checkAuthAndMerge = async (session: any) => {
       if (session?.user) {
-        setUser(session.user);
+        setUser(session.user); // ここで「連携完了！」に切り替わる！
         
         if (currentGuestId && currentGuestId !== session.user.id) {
           console.log('🔄 過去のデータをGoogleアカウントに紐付け中...');
@@ -95,7 +94,20 @@ export default function SettingsPage() {
       }
     };
     
-    checkAuthAndMerge();
+    // 💡 ① まず最初に一回チェックする
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      checkAuthAndMerge(session);
+    });
+
+    // 💡 ② ここが超重要！！ログイン状態の変化を「監視」する！
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Googleから帰ってきて解読が終わった瞬間にここが動く！
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        checkAuthAndMerge(session);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+      }
+    });
 
     const savedRoutine = localStorage.getItem('weeklyRoutine');
     if (savedRoutine) {
@@ -106,7 +118,12 @@ export default function SettingsPage() {
         setRoutine(parsed);
       }
     }
-  }, []);
+
+    // 💡 ③ ページを閉じる時に監視カメラをお片付け
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []); // ← useEffectの最後
 
   const saveRoutine = (newRoutine: WeeklyRoutine) => {
     setRoutine(newRoutine);
@@ -154,9 +171,16 @@ export default function SettingsPage() {
     <div className="max-w-xl mx-auto p-4 mt-6 space-y-6 pb-20">
       <div className="flex items-center justify-between border-b dark:border-gray-700 pb-4 sticky top-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md z-10 pt-2">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.back()} className="p-2 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-full transition shadow-sm">
+          <button 
+            onClick={() => {
+              // 💡 ポケットからメモを取り出す（もし無かったら安全のためにトップ '/' に帰す）
+              const returnPath = localStorage.getItem('returnPath') || '/';
+              router.push(returnPath);
+            }} 
+            className="p-2 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-full transition shadow-sm"
+         >
             <ArrowLeft size={20} />
-          </button>
+         </button>
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">設定</h1>
         </div>
       </div>
