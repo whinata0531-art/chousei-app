@@ -14,8 +14,8 @@ export default function GoogleLoginButton() {
           access_type: 'offline',
           prompt: 'consent',
         },
-        // ログインが終わったらアプリのトップページに戻ってくる設定
-        redirectTo: `${window.location.origin}/` 
+        // ⭕ ボタンを押した時のURLにそのまま帰ってくる！
+        redirectTo: window.location.href
       }
     })
 

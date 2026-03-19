@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { fetchGoogleCalendarEvents } from '../../lib/googleCalendar';
-import { getFixedDate } from '../../lib/utils';
+import { getFixedDate, generateId } from '../../lib/utils';
 import { Slot, Status, PastAvailability, AggregatedSlot, MatrixData, ConfirmedSchedule, RecentEvent, RoutineSlot, WeeklyRoutine } from '@/app/types';
 
 export function useEventLogic(eventId: string) {
@@ -34,62 +34,119 @@ export function useEventLogic(eventId: string) {
   const [editTitleStr, setEditTitleStr] = useState('');
   const [editDescStr, setEditDescStr] = useState('');
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) setIsGoogleLoggedIn(true);
+  // 💡 魔法の自動復活システム：使える鍵を必ず持ってくる関数！
+  const getValidGoogleToken = async () => {
+    // 1. ポケットから今の鍵（Access Token）とマスターキー（Refresh Token）を出す
+    let accessToken = localStorage.getItem('google_provider_token');
+    const refreshToken = localStorage.getItem('google_refresh_token');
 
-      let currentGuestId = localStorage.getItem('deviceGuestId');
-      if (!currentGuestId) {
-        currentGuestId = crypto.randomUUID();
-        localStorage.setItem('deviceGuestId', currentGuestId);
-      }
-      setDeviceGuestId(currentGuestId);
+    // もし鍵がどっちも無ければ、そもそもGoogleログインしてないってことだから諦める
+    if (!accessToken || !refreshToken) return null;
 
-      fetchMySchedules(currentGuestId);
-      fetchRecentEvents(currentGuestId);
+    // 2. 今の鍵がまだ生きてるか、Googleに軽くジャブを打って確認する（カレンダー一覧をリクエストしてみる）
+    const testRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-      const { data: eData } = await supabase.from('events').select('*').eq('id', eventId).single();
-      const { data: sData } = await supabase.from('slots').select('*').eq('event_id', eventId).order('start_at');
+    // 3. もし鍵が腐ってたら（401 Unauthorized エラーが返ってきたら）
+    if (testRes.status === 401) {
+      console.log('🔄 鍵が1時間で腐ってたから、秘密の小部屋（API）で新しいのをもらってくるぜ！');
       
-      if (eData) {
-        setEvent(eData);
-        await supabase.from('user_recent_events').upsert({ guest_id: currentGuestId, event_id: eventId, event_title: eData.title, accessed_at: Date.now() }, { onConflict: 'guest_id,event_id' });
+      // さっき作った自分のバックエンドAPIをノックする！
+      const refreshRes = await fetch('/api/refresh-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        accessToken = data.accessToken; // ピッカピカの新しい鍵をゲット！
+        localStorage.setItem('google_provider_token', accessToken as string); // ポケットの古い鍵を捨てて、新しい鍵に入れ替える！
+        console.log('✨ 新しい鍵の取得に成功！カレンダー操作を続行するよ！');
+      } else {
+        // マスターキーすら無効になってた場合（ユーザーがGoogleのパスワード変えた時とか）
+        console.error('マスターキーも使えなくなってた💦 もう一度ログインが必要だよ！');
+        return null; 
       }
-      
-      if (sData) {
-        setSlots(sData);
-        const initialAnswers: Record<string, Status> = {};
-        sData.forEach(s => initialAnswers[s.id] = 'maru'); 
+    }
 
-        const { data: existingResponse } = await supabase.from('responses').select('id, guest_name').eq('event_id', eventId).eq('guest_id', currentGuestId).single();
-        let loadedAnswers = { ...initialAnswers };
+    // 4. 絶対に使える（生きている）鍵を返す！
+    return accessToken;
+  };
 
-        if (existingResponse) {
-          setGuestName(existingResponse.guest_name);
-          const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', existingResponse.id);
-          if (aData) {
-            aData.forEach(a => loadedAnswers[a.slot_id] = a.status as Status);
-            setAnswers(loadedAnswers);
-          }
-        } else {
-          const savedName = localStorage.getItem('lastGuestName');
-          if (savedName) setGuestName(savedName);
+  // 💡 ① useEffectの外に、fetchAll関数を独立させて作る！（中身は今のままでOK）
+  const fetchAll = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) setIsGoogleLoggedIn(true);
+
+    let currentGuestId = localStorage.getItem('deviceGuestId');
+    if (!currentGuestId) {
+      currentGuestId = generateId(); // さっき直した自作IDツールね！
+      localStorage.setItem('deviceGuestId', currentGuestId);
+    }
+    setDeviceGuestId(currentGuestId);
+
+    fetchMySchedules(currentGuestId);
+    fetchRecentEvents(currentGuestId);
+
+    const { data: eData } = await supabase.from('events').select('*').eq('id', eventId).single();
+    const { data: sData } = await supabase.from('slots').select('*').eq('event_id', eventId).order('start_at');
+    
+    if (eData) {
+      setEvent(eData);
+      await supabase.from('user_recent_events').upsert({ guest_id: currentGuestId, event_id: eventId, event_title: eData.title, accessed_at: Date.now() }, { onConflict: 'guest_id,event_id' });
+    }
+    
+    if (sData) {
+      setSlots(sData);
+      const initialAnswers: Record<string, Status> = {};
+      sData.forEach(s => initialAnswers[s.id] = 'maru'); 
+
+      const { data: existingResponse } = await supabase.from('responses').select('id, guest_name').eq('event_id', eventId).eq('guest_id', currentGuestId).single();
+      let loadedAnswers = { ...initialAnswers };
+
+      if (existingResponse) {
+        setGuestName(existingResponse.guest_name);
+        const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', existingResponse.id);
+        if (aData) {
+          aData.forEach(a => loadedAnswers[a.slot_id] = a.status as Status);
           setAnswers(loadedAnswers);
         }
-
-        const { data: copies } = await supabase.from('user_smart_copies').select('*').eq('guest_id', currentGuestId);
-        if (copies) {
-          const parsed: Record<string, PastAvailability> = {};
-          copies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
-          setPastAvailabilities(parsed);
-        }
+      } else {
+        const savedName = localStorage.getItem('lastGuestName');
+        if (savedName) setGuestName(savedName);
+        setAnswers(loadedAnswers);
       }
 
-      if (sData) await fetchStats(sData);
-      setLoading(false);
-    };
-    fetchAll();
+      const { data: copies } = await supabase.from('user_smart_copies').select('*').eq('guest_id', currentGuestId);
+      if (copies) {
+        const parsed: Record<string, PastAvailability> = {};
+        copies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
+        setPastAvailabilities(parsed);
+      }
+    }
+
+    if (sData) await fetchStats(sData);
+    setLoading(false);
+  };
+
+  // 💡 ② useEffectの中は、めちゃくちゃスッキリこれだけになる！
+  useEffect(() => {
+    // 💡 ログインした瞬間に、2種類の鍵を両方ともポケットに隠す！
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      // ① 1時間で消える普通の鍵（Access Token）
+      if (session?.provider_token) {
+        localStorage.setItem('google_provider_token', session.provider_token);
+      }
+      
+      // ② 💡 これを追加！永遠に使えるマスターキー（Refresh Token）
+      if (session?.provider_refresh_token) {
+        localStorage.setItem('google_refresh_token', session.provider_refresh_token);
+      }
+    });
+
+    fetchAll(); // 外に出した関数を呼ぶだけ！
 
     const handleScroll = () => setShowScrollTop(window.scrollY > 300);
     window.addEventListener('scroll', handleScroll);
@@ -190,8 +247,8 @@ export function useEventLogic(eventId: string) {
     if (!confirm(confirmMessage)) return;
     setLoading(true);
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const providerToken = session?.provider_token;
+    // 💡 古い取り方を消して、魔法のツールを呼ぶだけにする！
+    const providerToken = await getValidGoogleToken();
 
     if (providerToken) {
       const sTime = getFixedDate(startAt).toISOString();
@@ -242,7 +299,13 @@ export function useEventLogic(eventId: string) {
     }
 
     await supabase.from('slots').update({ is_confirmed: isConfirming }).eq('id', slotId);
-    window.location.reload(); 
+    
+    // ⭕ リロードの代わりに、最新データを引っ張ってくる関数を呼ぶ！
+    // （※関数名は君の `useEventLogic.ts` でデータ取得に使っている名前にしてね！ `fetchEventData()` や `loadEvent()` など）
+    await fetchAll(); 
+    
+    // 💡 最初に setLoading(true) にしていたので、最後に必ず false に戻してあげる！
+    setLoading(false);
   };
 
   const applyWeeklyRoutine = () => {
@@ -332,8 +395,8 @@ export function useEventLogic(eventId: string) {
   };
 
   const applyGoogleCalendar = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const providerToken = session?.provider_token;
+    // 💡 ここも魔法のツールに差し替え！
+    const providerToken = await getValidGoogleToken();
 
     if (!providerToken) return alert('Googleカレンダーと同期するには、「設定」からもう一度Googleでログイン（再認証）してね！');
     if (slots.length === 0) return;
@@ -378,8 +441,8 @@ export function useEventLogic(eventId: string) {
   };
 
   const addSlotToGoogleCalendar = async (startAt: string, endAt: string, title: string) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const providerToken = session?.provider_token;
+    // 💡 ここも魔法のツールに差し替え！
+    const providerToken = await getValidGoogleToken();
     if (!providerToken) return alert('Googleカレンダーに追加するには、「設定」からもう一度Googleでログインしてね！');
 
     setLoading(true);
