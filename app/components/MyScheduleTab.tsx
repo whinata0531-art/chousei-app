@@ -4,6 +4,7 @@ import { ja } from 'date-fns/locale';
 import { CalendarCheck, ChevronDown, ChevronRight } from 'lucide-react';
 import { getFixedDate, formatSlotTime } from '@/lib/utils';
 import { useEventLogic } from '@/app/hooks/useEventLogic';
+import Link from 'next/link'; // ← これを追加！
 
 type Props = { logic: ReturnType<typeof useEventLogic> };
 
@@ -25,27 +26,32 @@ export default function MyScheduleTab({ logic }: Props) {
             {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
           </h3>
         )}
-        <div className="block bg-white dark:bg-gray-800/80 border-2 border-yellow-300 dark:border-yellow-600/50 p-4 rounded-xl shadow-sm">
+        {/* 💡 こっちも Link に変更！ */}
+        <Link href={`/event/${schedule.event_id}`} className="block bg-white dark:bg-gray-800/80 border-2 border-yellow-300 dark:border-yellow-600/50 p-4 rounded-xl shadow-sm hover:bg-yellow-50 dark:hover:bg-gray-700 transition-colors group">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs bg-yellow-500 dark:bg-yellow-600 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
-              <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100">{formatSlotTime(schedule.start_at, schedule.end_at)}</span>
+              <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100 group-hover:text-yellow-600 dark:group-hover:text-yellow-400 transition-colors">{formatSlotTime(schedule.start_at, schedule.end_at)}</span>
             </div>
+            <ChevronRight size={18} className="text-gray-400 group-hover:text-yellow-500 transition-colors" />
           </div>
           <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
           
           {logic.isGoogleLoggedIn && (
             <div className="mt-3 pt-3 border-t dark:border-gray-700 text-right">
               <button 
-                onClick={() => logic.addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle)} 
+                onClick={(e) => {
+                  e.preventDefault(); // 💡 魔法のコード：親の<Link>への移動をキャンセル！
+                  logic.addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle);
+                }} 
                 disabled={logic.loading} 
-                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm"
+                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm relative z-10"
               >
                 📅 Googleカレンダーに追加
               </button>
             </div>
           )}
-        </div>
+        </Link>
       </div>
     );
   };

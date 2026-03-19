@@ -25,17 +25,20 @@ export default function TopMyScheduleTab({ logic }: Props) {
             {format(getFixedDate(schedule.start_at), 'yyyy年M月d日 (E)', { locale: ja })}
           </h3>
         )}
-        <div className="block bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-600 p-4 rounded-xl shadow-sm">
+        {/* 💡 ここから！ div を Link に変えて、イベントページへのURLを指定！ */}
+        <Link href={`/event/${schedule.event_id}`} className="block bg-white dark:bg-gray-800 border-2 border-yellow-300 dark:border-yellow-600 p-4 rounded-xl shadow-sm hover:bg-yellow-50 dark:hover:bg-gray-700 transition-colors group">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs bg-yellow-400 text-white px-2 py-1 rounded-full font-bold shadow-sm">📌 仮確定</span>
-              <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100">
+              <span className="font-extrabold text-lg text-gray-800 dark:text-gray-100 group-hover:text-yellow-600 dark:group-hover:text-yellow-400 transition-colors">
                 {formatSlotTime(schedule.start_at, schedule.end_at)}
               </span>
             </div>
+            {/* 💡 飛べることのアピールアイコン */}
+            <ChevronRight size={18} className="text-gray-400 group-hover:text-yellow-500 transition-colors" />
           </div>
           <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
-        </div>
+        </Link>
       </div>
     );
   };
