@@ -20,7 +20,7 @@ export default function ResponseTab({ logic }: Props) {
         {logic.isGoogleLoggedIn && (
           <button onClick={logic.applyGoogleCalendar} disabled={logic.loading}
             className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-400 text-base font-bold rounded-xl border-2 border-emerald-200 dark:border-emerald-800/50 shadow-sm transition disabled:opacity-50">
-            <CalendarCheck size={20} /> {logic.loading ? '同期中...' : 'Googleカレンダーの予定を自動で ❌ にする'}
+            <CalendarCheck size={20} /> {logic.loading ? '同期中...' : 'Googleカレンダーの予定を自動で反映する'}
           </button>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
