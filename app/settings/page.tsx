@@ -289,9 +289,24 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400 font-bold leading-relaxed">
                 Googleアカウントと連携すると、今後のデータが自動でバックアップされ、カレンダーの予定と完全に同期できるようになります！
               </p>
-              <div className="w-full max-w-sm">
+
+              {/* 💡 ボタンと注意書きを同じ箱（max-w-xs）に入れて幅を完璧に揃える！ */}
+              <div className="w-full max-w-xs flex flex-col gap-2">
                 <GoogleLoginButton />
+
+                {/* 💡 注意書きの余白(p-3)と文章をギュッと短くコンパクトに！ */}
+                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-xl text-xs text-yellow-800 dark:text-yellow-200 leading-snug border border-yellow-200 dark:border-yellow-800/50 shadow-sm text-left">
+                  <p className="font-bold mb-1 flex items-center gap-1">
+                    <span className="text-sm">⚠️</span> ログイン時の警告について
+                  </p>
+                  <p className="opacity-90">
+                    現在Google審査中のため、<span className="font-bold text-red-400">「確認されていません」</span>と出ることがあります。<br/>
+                    左下の<span className="font-bold bg-white/50 dark:bg-black/20 px-1 rounded mx-0.5">詳細</span>＞<span className="font-bold bg-white/50 dark:bg-black/20 px-1 rounded mx-0.5">最強調整に移動</span>を押して進んでください🙇‍♂️<br/>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 block">※個人開発のため、ご安心ください！</span>
+                  </p>
+                </div>
               </div>
+
             </div>
           )}
         </div>
