@@ -12,6 +12,11 @@ export function useEventLogic(eventId: string) {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [serverError, setServerError] = useState<Error | null>(null);
+  if (serverError) {
+    throw serverError;
+  }
+
   const [deviceGuestId, setDeviceGuestId] = useState('');
   const [guestName, setGuestName] = useState('');
   const [answers, setAnswers] = useState<Record<string, Status>>({});
@@ -90,8 +95,20 @@ export function useEventLogic(eventId: string) {
     fetchMySchedules(currentGuestId);
     fetchRecentEvents(currentGuestId);
 
-    const { data: eData } = await supabase.from('events').select('*').eq('id', eventId).single();
-    const { data: sData } = await supabase.from('slots').select('*').eq('event_id', eventId).order('start_at');
+    // 💡 修正後：エラー（error）も受け取って、エラーなら爆発させる！💥
+    const { data: eData, error: eError } = await supabase.from('events').select('*').eq('id', eventId).single();
+    
+    if (eError) {
+      setServerError(new Error('イベント情報の取得に失敗しました: ' + eError.message));
+      return; // ここで処理ストップ！
+    }
+
+    const { data: sData, error: sError } = await supabase.from('slots').select('*').eq('event_id', eventId).order('start_at');
+    
+    if (sError) {
+      setServerError(new Error('日程データの取得に失敗しました: ' + sError.message));
+      return; // ここで処理ストップ！
+    }
     
     if (eData) {
       setEvent(eData);

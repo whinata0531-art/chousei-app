@@ -15,6 +15,14 @@ export type DayBlock = { id: string; date: string; isAllDay: boolean; isExpanded
 export function useTopPageLogic() {
   const [activeTab, setActiveTab] = useState<'create' | 'my-schedule'>('create');
   
+  // 💡 ① ここに追加！エラー強制発動用のスイッチ
+  const [serverError, setServerError] = useState<Error | null>(null);
+
+  // 💡 ② ここに追加！スイッチがオンになったらドカンと爆発させる！💥
+  if (serverError) {
+    throw serverError;
+  }
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   
@@ -74,13 +82,30 @@ export function useTopPageLogic() {
   }, []);
 
   const fetchRecentEvents = async (guestId: string) => {
-    const { data } = await supabase.from('user_recent_events').select('*').eq('guest_id', guestId).order('accessed_at', { ascending: false }).limit(10);
+    // 💡 dataだけでなく、errorも受け取るようにする！
+    const { data, error } = await supabase.from('user_recent_events').select('*').eq('guest_id', guestId).order('accessed_at', { ascending: false }).limit(10);
+    
+    // 💡 もしエラーだったら、さっきのスイッチをオンにする！
+    if (error) {
+      setServerError(new Error('履歴の取得に失敗しました: ' + error.message));
+      return; // ここで処理ストップ
+    }
+
     if (data) setRecentEvents(data.map((d: any) => ({ id: d.event_id, title: d.event_title, lastAccessed: d.accessed_at })));
   };
 
   const fetchMySchedules = async (guestId: string) => {
     setFetchingSchedules(true);
-    const { data: resData } = await supabase.from('responses').select('id, event_id').eq('guest_id', guestId);
+    // 💡 resDataだけでなく、resErrorも受け取る！
+    const { data: resData, error: resError } = await supabase.from('responses').select('id, event_id').eq('guest_id', guestId);
+
+    // 💡 もしエラーだったら、スイッチをオン！
+    if (resError) {
+      setServerError(new Error('スケジュールの取得に失敗しました: ' + resError.message));
+      setFetchingSchedules(false);
+      return;
+    }
+    
     if (!resData || resData.length === 0) { setFetchingSchedules(false); return; }
 
     const resIds = resData.map(r => r.id);
