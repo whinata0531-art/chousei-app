@@ -1,8 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-// 💡 ① これを追加！URLから「?band=〇〇」を読み取るためのフック！
-import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { addMinutes, format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, isSameDay } from 'date-fns';
 import { getFixedDate, generateId } from '@/lib/utils';
@@ -15,10 +13,6 @@ export type TimeSlot = { id: string; start: string; end: string };
 export type DayBlock = { id: string; date: string; isAllDay: boolean; isExpanded: boolean; times: TimeSlot[] };
 
 export function useTopPageLogic() {
-  // 💡 ② URLからバンド名をゲットする！！
-  const searchParams = useSearchParams();
-  const bandName = searchParams.get('band');
-
   const [activeTab, setActiveTab] = useState<'create' | 'my-schedule'>('create');
   
   // 💡 ① ここに追加！エラー強制発動用のスイッチ
@@ -293,6 +287,9 @@ export function useTopPageLogic() {
   };
 
   const handleCreate = async () => {
+    // 🚀 【追加】ボタンを押した瞬間に、現在のURLから直接バンド名を引っこ抜く！！
+    const urlParams = new URLSearchParams(window.location.search);
+    const bandName = urlParams.get('band');
     const flatSlotsToSubmit: { startAt: string, endAt: string }[] = [];
     
     dayBlocks.forEach(block => {
