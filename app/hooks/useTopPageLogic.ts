@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+// 💡 ① これを追加！URLから「?band=〇〇」を読み取るためのフック！
+import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { addMinutes, format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, isSameDay } from 'date-fns';
 import { getFixedDate, generateId } from '@/lib/utils';
@@ -13,6 +15,10 @@ export type TimeSlot = { id: string; start: string; end: string };
 export type DayBlock = { id: string; date: string; isAllDay: boolean; isExpanded: boolean; times: TimeSlot[] };
 
 export function useTopPageLogic() {
+  // 💡 ② URLからバンド名をゲットする！！
+  const searchParams = useSearchParams();
+  const bandName = searchParams.get('band');
+
   const [activeTab, setActiveTab] = useState<'create' | 'my-schedule'>('create');
   
   // 💡 ① ここに追加！エラー強制発動用のスイッチ
@@ -302,8 +308,19 @@ export function useTopPageLogic() {
     if (!title || flatSlotsToSubmit.length === 0) return alert('タイトルと、少なくとも1つの「有効な時間枠」を入力してね！');
     setLoading(true);
 
-    const { data: eventData, error: eventError } = await supabase.from('events').insert([{ title, description, host_id: deviceGuestId }]).select('id').single();
-    if (eventError || !eventData) { alert('エラーが発生しました'); setLoading(false); return; }
+    // 💡 ③ insertの中に `band_name` を追加！！
+    const { data: eventData, error: eventError } = await supabase
+      .from('events')
+      .insert([{ 
+        title, 
+        description, 
+        host_id: deviceGuestId,
+        band_name: bandName // 👈 ここに受け取ったバンド名を入れる！！
+     }])
+     .select('id')
+     .single();
+     
+      if (eventError || !eventData) { alert('エラーが発生しました'); setLoading(false); return; }
 
     const slotsToInsert = flatSlotsToSubmit.map(s => ({ event_id: eventData.id, start_at: `${s.startAt}:00+00:00`, end_at: `${s.endAt}:00+00:00` }));
 
