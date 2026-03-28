@@ -487,32 +487,57 @@ export function useEventLogic(eventId: string) {
     const { data: { session } } = await supabase.auth.getSession();
     const userEmail = session?.user?.email || null;
 
-    const { data: resData } = await supabase
+    // 🚀 魔改造①：同じイベント内に「同じ名前」のデータが既にないか探す！
+    // （※エラーにならないように .single() じゃなくて .maybeSingle() を使うのがプロの技！）
+    const { data: existingUser } = await supabase
+      .from('responses')
+      .select('id, guest_id')
+      .eq('event_id', eventId)
+      .eq('guest_name', guestName)
+      .maybeSingle(); 
+
+    // 🚀 魔改造②：使うIDを決定！（見つかれば過去のID、なければ今のブラウザのID）
+    const targetGuestId = existingUser ? existingUser.guest_id : deviceGuestId;
+
+    // 🚀 魔改造③：決定したIDで上書き保存（upsert）する！
+    const { data: resData, error } = await supabase
       .from('responses')
       .upsert({ 
         event_id: eventId, 
-        guest_id: deviceGuestId, 
+        guest_id: targetGuestId, // 👈 ここが最大のポイント！
         guest_name: guestName, 
         email: userEmail,
         updated_at: new Date().toISOString() 
       }, { onConflict: 'event_id,guest_id' })
       .select('id').single();
 
-    if (resData) {
-      await supabase.from('availabilities').delete().eq('response_id', resData.id);
-      const avails = Object.entries(answers).map(([slotId, status]) => ({ response_id: resData.id, slot_id: slotId, status }));
-      await supabase.from('availabilities').insert(avails);
-
-      const now = Date.now();
-      const copyUpserts = slots.map(slot => ({ guest_id: deviceGuestId, time_key: `${slot.start_at}_${slot.end_at}`, status: answers[slot.id], updated_at: now }));
-      await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
-
-      localStorage.setItem('lastGuestName', guestName);
-      alert('回答を保存しました！🎉\nクラウドに同期されたよ！');
-      await fetchStats(slots);
-      await fetchMySchedules(deviceGuestId);
-      setActiveTab('result');
+    if (error || !resData) {
+      alert('保存に失敗しました💦');
+      setLoading(false);
+      return;
     }
+
+    // 🚀 魔改造④：もし別ブラウザの過去データと合体した場合、今のブラウザのIDも過去のヤツに上書きしちゃう！
+    // （これで以降のスマートコピーとかも全部一人の人間として繋がる！）
+    if (existingUser && existingUser.guest_id !== deviceGuestId) {
+      localStorage.setItem('deviceGuestId', existingUser.guest_id);
+      setDeviceGuestId(existingUser.guest_id);
+    }
+
+    // --- ここから下は元の処理と同じ！（※一部 targetGuestId に変更） ---
+    await supabase.from('availabilities').delete().eq('response_id', resData.id);
+    const avails = Object.entries(answers).map(([slotId, status]) => ({ response_id: resData.id, slot_id: slotId, status }));
+    await supabase.from('availabilities').insert(avails);
+
+    const now = Date.now();
+    const copyUpserts = slots.map(slot => ({ guest_id: targetGuestId, time_key: `${slot.start_at}_${slot.end_at}`, status: answers[slot.id], updated_at: now }));
+    await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
+
+    localStorage.setItem('lastGuestName', guestName);
+    alert('回答を保存しました！🎉\nクラウドに同期されたよ！');
+    await fetchStats(slots);
+    await fetchMySchedules(targetGuestId); // 💡 ここも targetGuestId に変更！
+    setActiveTab('result');
     setLoading(false);
   };
 
