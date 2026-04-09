@@ -48,19 +48,43 @@ export default function ResultTab({ logic }: Props) {
                   'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700';
 
                 return (
-                  <div key={slot.id} className={`p-4 border rounded-xl flex flex-col gap-4 transition-all ${slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-400 dark:border-yellow-600/50 shadow-md transform scale-[1.02]' : highlightClass}`}>
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div>
-                        {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 dark:bg-yellow-600 text-white text-xs font-bold rounded-full mb-2 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
-                        {!slot.is_confirmed && tier === 1 && <span className="inline-block px-2 py-1 bg-green-500 text-white text-xs font-bold rounded mb-1 shadow-sm">🌟 おすすめ</span>}
-                        <div className="font-bold text-lg dark:text-gray-100">
-                          {format(getFixedDate(slot.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(slot.start_at, slot.end_at)}
-                        </div>
+                  <div key={slot.id} className={`p-4 border rounded-xl flex flex-col gap-3 transition-all ${slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-400 dark:border-yellow-600/50 shadow-md transform scale-[1.02]' : highlightClass}`}>
+                    {/* 1. 日時やラベル（一番上） */}
+                    <div className="mb-2">
+                      {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 dark:bg-yellow-600 text-white text-[10px] font-bold rounded-full mb-1.5 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
+                      {!slot.is_confirmed && tier === 1 && <span className="inline-block px-2 py-1 bg-green-500 text-white text-[10px] font-bold rounded mb-1.5 shadow-sm">🌟 おすすめ</span>}
+                      <div className="font-bold text-base sm:text-lg dark:text-gray-100 tracking-tight">
+                        {format(getFixedDate(slot.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(slot.start_at, slot.end_at)}
                       </div>
-                      <div className="flex gap-4 text-center">
-                        <div><div className="text-xs text-gray-500">⭕️</div><div className="font-bold text-green-600 dark:text-green-400 text-xl">{slot.maru}</div></div>
-                        <div><div className="text-xs text-gray-500">🔺</div><div className="font-bold text-orange-500 dark:text-orange-400 text-xl">{slot.sankaku}</div></div>
-                        <div><div className="text-xs text-gray-500">❌</div><div className="font-bold text-red-500 dark:text-red-400 text-xl">{slot.batsu}</div></div>
+                    </div>
+
+                    {/* 2. 左に集計、右に名前（横並びにして空きスペースをフル活用！） */}
+                    <div className="flex flex-row items-start justify-between gap-3 mb-2">
+      
+                      {/* 左側：〇△×の集計 */}
+                      <div className="flex gap-4 text-center shrink-0 pt-1">
+                        <div><div className="text-[12px] text-gray-500 font-medium">⭕️</div><div className="font-bold text-green-600 dark:text-green-400 text-xl leading-none mt-1">{slot.maru}</div></div>
+                        <div><div className="text-[12px] text-gray-500 font-medium">🔺</div><div className="font-bold text-orange-500 dark:text-orange-400 text-xl leading-none mt-1">{slot.sankaku}</div></div>
+                        <div><div className="text-[12px] text-gray-500 font-medium">❌</div><div className="font-bold text-red-500 dark:text-red-400 text-xl leading-none mt-1">{slot.batsu}</div></div>
+                      </div>
+
+                      {/* 右側：名前バッジ（右詰めで配置し、人数が多い場合は折り返す） */}
+                      <div className="flex-1 flex flex-wrap justify-end content-start gap-1 pl-3 border-l border-gray-100 dark:border-gray-700 min-h-[40px]">
+                        {logic.matrix.map((row, idx) => {
+                          const status = row.answers[slot.id];
+                          if (status !== 'sankaku' && status !== 'batsu') return null;
+                          const config = 
+                            status === 'sankaku' ? { icon: '△', css: 'bg-orange-50 text-orange-700 border-orange-200' } :
+                            status === 'batsu' ? { icon: '×', css: 'bg-red-50 text-red-700 border-red-200' } :
+                            { icon: '-', css: 'bg-gray-50 text-gray-400 border-gray-100' };
+
+                          return (
+                            <div key={idx} className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold border ${config.css}`}>
+                              <span>{config.icon}</span>
+                              <span className="max-w-[70px] truncate">{row.guestName}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 

@@ -192,11 +192,35 @@ export function useEventLogic(eventId: string) {
   };
 
   const fetchStats = async (currentSlots: Slot[]) => {
-    const { data: responses } = await supabase.from('responses').select('*').eq('event_id', eventId).order('created_at');
-    if (!responses) return;
-    const resIds = responses.map(r => r.id);
-    const { data: avails } = await supabase.from('availabilities').select('*').in('response_id', resIds);
+    // 1. まず「誰が回答したか（名前）」を取得
+    const { data: responses, error: resError } = await supabase.from('responses').select('*').eq('event_id', eventId).order('created_at');
+    
+    if (resError) {
+      console.error('❌ 回答者の取得エラー:', resError);
+      return;
+    }
 
+    // まだ誰も回答していない場合の安全策（これがないとエラーになることがあります）
+    if (!responses || responses.length === 0) {
+      setAggregated(currentSlots.map((s, index) => ({ ...s, maru: 0, sankaku: 0, batsu: 0, total: 0, originalIndex: index })));
+      setMatrix([]);
+      return;
+    }
+
+    // 2. 「その人たちがつけた〇△×」を取得
+    const resIds = responses.map(r => r.id);
+    const { data: avails, error: availsError } = await supabase.from('availabilities').select('*').in('response_id', resIds);
+
+    if (availsError) {
+      console.error('❌ 〇△×データの取得エラー:', availsError);
+    }
+
+    // ★ 魔法のデバッグログ：何が読み込めているかブラウザの裏側に出力します
+    console.log('👥 取得した回答者一覧:', responses);
+    console.log('✅ 取得した〇△×データ:', avails);
+    console.log('📅 現在の候補日程:', currentSlots);
+
+    // 3. 〇△×の数を集計する
     let stats = currentSlots.map((slot, index) => {
       const slotAvails = avails?.filter(a => a.slot_id === slot.id) || [];
       return {
@@ -210,12 +234,17 @@ export function useEventLogic(eventId: string) {
     });
     setAggregated(stats);
 
+    // 4. マトリックス（表）用のデータを作る
     const matrixData: MatrixData[] = responses.map(res => {
       const userAvails = avails?.filter(a => a.response_id === res.id) || [];
       const userAnswers: Record<string, string> = {};
-      userAvails.forEach(a => userAnswers[a.slot_id] = a.status);
+      userAvails.forEach(a => {
+        userAnswers[a.slot_id] = a.status; // ここで「日程ID」と「〇△×」を結びつけています
+      });
       return { guestId: res.guest_id, guestName: res.guest_name, answers: userAnswers };
     });
+    
+    console.log('📊 完成したマトリックス:', matrixData);
     setMatrix(matrixData);
   };
 
