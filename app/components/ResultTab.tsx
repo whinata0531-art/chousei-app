@@ -13,7 +13,7 @@ export default function ResultTab({ logic }: Props) {
   const getStatusIcon = (s: string) => s === 'maru' ? '⭕️' : s === 'sankaku' ? '🔺' : s === 'batsu' ? '❌' : '-';
 
   // 📤 候補日程の共有モード・モーダル用の状態
-  const [isShareSelectMode, setIsShareSelectMode] = useState(false);
+  const { isShareSelectMode, setIsShareSelectMode } = logic;
   const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareText, setShareText] = useState('');
@@ -74,6 +74,25 @@ export default function ResultTab({ logic }: Props) {
       prev.includes(slotId) ? prev.filter(id => id !== slotId) : [...prev, slotId]
     );
   };
+
+  // 一括選択ボタン用のトグル判定とハンドラー
+  const recIds = logic.sortedAndFilteredSlots.filter(s => logic.getSlotTier(s) === 1).map(s => s.id);
+  const isAllRecSelected = recIds.length > 0 && recIds.every(id => selectedSlotIds.includes(id));
+  const toggleGroupIds = (targetIds: string[]) => {
+    if (targetIds.length === 0) return;
+    const allSelected = targetIds.every(id => selectedSlotIds.includes(id));
+    if (allSelected) {
+      setSelectedSlotIds(prev => prev.filter(id => !targetIds.includes(id)));
+    } else {
+      setSelectedSlotIds(prev => Array.from(new Set([...prev, ...targetIds])));
+    }
+  };
+
+  const confIds = logic.confirmedSlots.map(s => s.id);
+  const isAllConfSelected = confIds.length > 0 && confIds.every(id => selectedSlotIds.includes(id));
+
+  const visibleIds = logic.sortedAndFilteredSlots.map(s => s.id);
+  const isAllVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedSlotIds.includes(id));
 
   // 選択した日程からテキストを生成して共有モーダルを開く（日時順に並べる）
   const handleProceedToShare = () => {
@@ -153,101 +172,108 @@ export default function ResultTab({ logic }: Props) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow border-t-4 border-green-500 transition-all">
-        <div className="sticky top-[4.5rem] z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md p-6 border-b dark:border-gray-700 shadow-sm rounded-t-xl">
-          <button onClick={() => logic.setIsSummaryOpen(!logic.isSummaryOpen)} className="w-full flex items-center justify-between focus:outline-none">
-            <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">📊 日程ごとの集計</h2>
-            <div className="p-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 transition-colors">
-              {logic.isSummaryOpen ? <ChevronDown size={20} className="text-gray-600 dark:text-gray-300" /> : <ChevronRight size={20} className="text-gray-600 dark:text-gray-300" />}
-            </div>
-          </button>
-        </div>
+    <>
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow border-t-4 border-green-500 transition-all">
+          <div className="sticky top-[4.5rem] z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md p-6 border-b dark:border-gray-700 shadow-sm rounded-t-xl">
+            <button onClick={() => logic.setIsSummaryOpen(!logic.isSummaryOpen)} className="w-full flex items-center justify-between focus:outline-none">
+              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">📊 日程ごとの集計</h2>
+              <div className="p-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 transition-colors">
+                {logic.isSummaryOpen ? <ChevronDown size={20} className="text-gray-600 dark:text-gray-300" /> : <ChevronRight size={20} className="text-gray-600 dark:text-gray-300" />}
+              </div>
+            </button>
+          </div>
 
-        {logic.isSummaryOpen && (
-          <div className="p-6 pt-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-gray-700 dark:text-gray-300">並び替え:</span>
-                  <select value={logic.sortType} onChange={e => logic.setSortType(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm bg-white outline-none">
-                    <option value="time">⏰ 日時が早い順</option>
-                    <option value="maru">⭕️ 参加者が多い順</option>
-                    <option value="batsu">❌ 不参加が少ない順</option>
-                  </select>
+          {logic.isSummaryOpen && (
+            <div className="p-6 pt-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-gray-700 dark:text-gray-300">並び替え:</span>
+                    <select value={logic.sortType} onChange={e => logic.setSortType(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm bg-white outline-none">
+                      <option value="time">⏰ 日時が早い順</option>
+                      <option value="maru">⭕️ 参加者が多い順</option>
+                      <option value="batsu">❌ 不参加が少ない順</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 sm:border-l dark:border-gray-600 sm:pl-4">
+                    <input type="checkbox" id="hideBatsu" checked={logic.hideBatsu} onChange={e => logic.setHideBatsu(e.target.checked)} className="w-4 h-4" />
+                    <label htmlFor="hideBatsu" className="text-sm font-medium dark:text-gray-300 cursor-pointer">❌を除外</label>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 sm:border-l dark:border-gray-600 sm:pl-4">
-                  <input type="checkbox" id="hideBatsu" checked={logic.hideBatsu} onChange={e => logic.setHideBatsu(e.target.checked)} className="w-4 h-4" />
-                  <label htmlFor="hideBatsu" className="text-sm font-medium dark:text-gray-300 cursor-pointer">❌を除外</label>
-                </div>
+
+                <button
+                  onClick={() => {
+                    if (isShareSelectMode) {
+                      setIsShareSelectMode(false);
+                      setSelectedSlotIds([]);
+                    } else {
+                      setIsShareSelectMode(true);
+                    }
+                  }}
+                  className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm shadow-sm transition-all shrink-0 ${
+                    isShareSelectMode
+                      ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  <Share2 size={16} />
+                  {isShareSelectMode ? '選択をやめる' : '候補日程を共有'}
+                </button>
               </div>
 
-              <button
-                onClick={() => {
-                  if (isShareSelectMode) {
-                    setIsShareSelectMode(false);
-                    setSelectedSlotIds([]);
-                  } else {
-                    setIsShareSelectMode(true);
-                  }
-                }}
-                className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm shadow-sm transition-all shrink-0 ${
-                  isShareSelectMode
-                    ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                <Share2 size={16} />
-                {isShareSelectMode ? '選択をやめる' : '候補日程を共有'}
-              </button>
-            </div>
-
-            {/* 📤 共有モード中のガイド＆一括選択バー */}
-            {isShareSelectMode && (
-              <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-xl space-y-3 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-bold text-blue-800 dark:text-blue-300">
-                    ☑️ 共有したい日程をタップして選んでね！（現在 {selectedSlotIds.length} 件選択中）
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => {
-                      const recIds = logic.sortedAndFilteredSlots.filter(s => logic.getSlotTier(s) === 1).map(s => s.id);
-                      setSelectedSlotIds(prev => Array.from(new Set([...prev, ...recIds])));
-                    }}
-                    className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-gray-800 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-700 rounded-lg hover:bg-green-50 transition"
-                  >
-                    🌟 おすすめを追加
-                  </button>
-                  {logic.confirmedSlots.length > 0 && (
+              {/* 📤 共有モード中のスッキリした一括選択バー */}
+              {isShareSelectMode && (
+                <div className="mb-4 px-3 py-2.5 bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl flex flex-wrap items-center justify-between gap-2 animate-fade-in">
+                  <span className="text-xs font-bold text-blue-800 dark:text-blue-300">
+                    共有したい日程をタップ
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {recIds.length > 0 && (
+                      <button
+                        onClick={() => toggleGroupIds(recIds)}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
+                          isAllRecSelected
+                            ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                            : 'bg-white dark:bg-gray-800 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700 hover:bg-green-50'
+                        }`}
+                      >
+                        🌟 おすすめ
+                      </button>
+                    )}
+                    {confIds.length > 0 && (
+                      <button
+                        onClick={() => toggleGroupIds(confIds)}
+                        className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
+                          isAllConfSelected
+                            ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm'
+                            : 'bg-white dark:bg-gray-800 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700 hover:bg-yellow-50'
+                        }`}
+                      >
+                        📌 仮確定
+                      </button>
+                    )}
                     <button
-                      onClick={() => {
-                        const confIds = logic.confirmedSlots.map(s => s.id);
-                        setSelectedSlotIds(prev => Array.from(new Set([...prev, ...confIds])));
-                      }}
-                      className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-gray-800 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-700 rounded-lg hover:bg-yellow-50 transition"
+                      onClick={() => toggleGroupIds(visibleIds)}
+                      className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
+                        isAllVisibleSelected
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700 hover:bg-blue-100'
+                      }`}
                     >
-                      📌 仮確定を追加
+                      すべて選択
                     </button>
-                  )}
-                  <button
-                    onClick={() => setSelectedSlotIds(logic.sortedAndFilteredSlots.map(s => s.id))}
-                    className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-100 transition"
-                  >
-                    表示中をすべて選択
-                  </button>
-                  {selectedSlotIds.length > 0 && (
-                    <button
-                      onClick={() => setSelectedSlotIds([])}
-                      className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 transition"
-                    >
-                      選択をクリア
-                    </button>
-                  )}
+                    {selectedSlotIds.length > 0 && (
+                      <button
+                        onClick={() => setSelectedSlotIds([])}
+                        className="px-2.5 py-1 text-xs font-bold bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 transition"
+                      >
+                        クリア
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             <div className="space-y-4">
               {logic.sortedAndFilteredSlots.map((slot) => {
@@ -338,9 +364,61 @@ export default function ResultTab({ logic }: Props) {
         )}
       </div>
 
-      {/* 📤 日程選択モード中の画面下部固定バー */}
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-6 overflow-hidden">
+          <h2 className="text-xl font-bold mb-4 dark:text-gray-100">👥 回答者マトリックス</h2>
+          {logic.matrix.length === 0 ? (
+            <p className="text-gray-500">まだ回答がありません。</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left whitespace-nowrap border-collapse">
+                <thead>
+                  <tr>
+                    <th className="p-3 border-b-2 bg-gray-50 dark:bg-gray-800 font-bold text-gray-700 dark:text-gray-300 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">名前</th>
+                    {[...logic.aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
+                      const tier = logic.getSlotTier(slot);
+                      const headerClass = 
+                        slot.is_confirmed ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700/50' :
+                        tier === 1 ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700' :
+                        tier === 2 ? 'bg-orange-100 dark:bg-yellow-900/30 text-orange-800 dark:text-yellow-400 border-orange-200 dark:border-yellow-700/50' : 
+                        'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 dark:border-gray-700';
+                      
+                      return (
+                        <th key={slot.id} className={`p-3 border-b-2 text-xs font-medium ${headerClass}`}>
+                          {slot.is_confirmed && '📌'}{!slot.is_confirmed && tier === 1 && '🌟'}<br/>
+                          {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>
+                          {formatSlotTime(slot.start_at, slot.end_at)}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {logic.matrix.map((row, i) => (
+                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                      <td className="p-3 border-b dark:border-gray-700 font-medium sticky left-0 bg-white dark:bg-gray-900 dark:text-gray-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.guestName}</td>
+                      {[...logic.aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
+                        const tier = logic.getSlotTier(slot);
+                        const cellClass = 
+                          slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20' :
+                          tier === 1 ? 'bg-green-50 dark:bg-green-900/20' :
+                          tier === 2 ? 'bg-orange-50/50 dark:bg-yellow-900/20' : 'dark:bg-gray-800';
+                          
+                        return (
+                          <td key={slot.id} className={`p-3 border-b dark:border-gray-700 text-center text-xl ${cellClass}`}>{getStatusIcon(row.answers[slot.id])}</td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 📤 日程選択モード中の画面下部固定バー（mb-0で親のspace-yによる余白浮きを完全に防止） */}
       {isShareSelectMode && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t-2 border-blue-500 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] z-40">
+        <div className="fixed bottom-0 left-0 right-0 mb-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t-2 border-blue-500 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] z-40">
           <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
             <button
               onClick={() => {
@@ -369,7 +447,7 @@ export default function ResultTab({ logic }: Props) {
 
       {/* 📤 共有・コピー用モーダル */}
       {isShareModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 mb-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border dark:border-gray-700 w-full max-w-lg overflow-hidden animate-fade-in">
             <div className="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20">
               <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
@@ -451,57 +529,6 @@ export default function ResultTab({ logic }: Props) {
           </div>
         </div>
       )}
-
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-6 overflow-hidden">
-        <h2 className="text-xl font-bold mb-4 dark:text-gray-100">👥 回答者マトリックス</h2>
-        {logic.matrix.length === 0 ? (
-          <p className="text-gray-500">まだ回答がありません。</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left whitespace-nowrap border-collapse">
-              <thead>
-                <tr>
-                  <th className="p-3 border-b-2 bg-gray-50 dark:bg-gray-800 font-bold text-gray-700 dark:text-gray-300 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">名前</th>
-                  {[...logic.aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
-                    const tier = logic.getSlotTier(slot);
-                    const headerClass = 
-                      slot.is_confirmed ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700/50' :
-                      tier === 1 ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700' :
-                      tier === 2 ? 'bg-orange-100 dark:bg-yellow-900/30 text-orange-800 dark:text-yellow-400 border-orange-200 dark:border-yellow-700/50' : 
-                      'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 dark:border-gray-700';
-                    
-                    return (
-                      <th key={slot.id} className={`p-3 border-b-2 text-xs font-medium ${headerClass}`}>
-                        {slot.is_confirmed && '📌'}{!slot.is_confirmed && tier === 1 && '🌟'}<br/>
-                        {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>
-                        {formatSlotTime(slot.start_at, slot.end_at)}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {logic.matrix.map((row, i) => (
-                  <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                    <td className="p-3 border-b dark:border-gray-700 font-medium sticky left-0 bg-white dark:bg-gray-900 dark:text-gray-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.guestName}</td>
-                    {[...logic.aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
-                      const tier = logic.getSlotTier(slot);
-                      const cellClass = 
-                        slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20' :
-                        tier === 1 ? 'bg-green-50 dark:bg-green-900/20' :
-                        tier === 2 ? 'bg-orange-50/50 dark:bg-yellow-900/20' : 'dark:bg-gray-800';
-                        
-                      return (
-                        <td key={slot.id} className={`p-3 border-b dark:border-gray-700 text-center text-xl ${cellClass}`}>{getStatusIcon(row.answers[slot.id])}</td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
+    </>
   );
 }

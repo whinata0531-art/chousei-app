@@ -27,6 +27,7 @@ export function useEventLogic(eventId: string) {
   const [sortType, setSortType] = useState('time');
   const [hideBatsu, setHideBatsu] = useState(false);
   const [isSummaryOpen, setIsSummaryOpen] = useState(true); 
+  const [isShareSelectMode, setIsShareSelectMode] = useState(false);
 
   const [mySchedules, setMySchedules] = useState<ConfirmedSchedule[]>([]);
   const [fetchingSchedules, setFetchingSchedules] = useState(false);
@@ -677,6 +678,7 @@ export function useEventLogic(eventId: string) {
     deviceGuestId, guestName, setGuestName, answers, setAnswers,
     pastAvailabilities, aggregated, matrix, sortType, setSortType,
     hideBatsu, setHideBatsu, isSummaryOpen, setIsSummaryOpen,
+    isShareSelectMode, setIsShareSelectMode,
     mySchedules, fetchingSchedules, recentEvents, setRecentEvents,
     showScrollTop, isGoogleLoggedIn, isEditingTitle, setIsEditingTitle,
     editTitleStr, setEditTitleStr, editDescStr, setEditDescStr,

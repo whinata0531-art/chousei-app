@@ -138,7 +138,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       )}
 
       {logic.showScrollTop && (
-        <button onClick={logic.scrollToTop} className="fixed bottom-6 right-6 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all z-50 animate-fade-in-up">
+        <button
+          onClick={logic.scrollToTop}
+          className={`fixed right-6 mb-0 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all z-40 animate-fade-in-up ${
+            logic.activeTab === 'result' && logic.isShareSelectMode ? 'bottom-24' : 'bottom-6'
+          }`}
+        >
           <ArrowUp size={24} />
         </button>
       )}
