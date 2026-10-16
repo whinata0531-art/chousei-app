@@ -120,12 +120,13 @@ export function useEventLogic(eventId: string) {
       const initialAnswers: Record<string, Status> = {};
       sData.forEach(s => initialAnswers[s.id] = 'maru'); 
 
-      const { data: existingResponse } = await supabase.from('responses').select('id, guest_name').eq('event_id', eventId).eq('guest_id', currentGuestId).single();
+      const { data: existingResponses } = await supabase.from('responses').select('id, guest_name').eq('event_id', eventId).eq('guest_id', currentGuestId).order('updated_at', { ascending: false }).limit(1);
+      const existingResponse = existingResponses?.[0];
       let loadedAnswers = { ...initialAnswers };
 
       if (existingResponse) {
         setGuestName(existingResponse.guest_name);
-        const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', existingResponse.id);
+        const { data: aData } = await supabase.from('availabilities').select('slot_id, status').eq('response_id', existingResponse.id).limit(1000);
         if (aData) {
           aData.forEach(a => loadedAnswers[a.slot_id] = a.status as Status);
           setAnswers(loadedAnswers);
@@ -136,10 +137,23 @@ export function useEventLogic(eventId: string) {
         setAnswers(loadedAnswers);
       }
 
-      const { data: copies } = await supabase.from('user_smart_copies').select('*').eq('guest_id', currentGuestId);
-      if (copies) {
+      let allCopies: any[] = [];
+      let copyFrom = 0;
+      while (true) {
+        const { data: copyPage, error: copyErr } = await supabase
+          .from('user_smart_copies')
+          .select('*')
+          .eq('guest_id', currentGuestId)
+          .order('time_key')
+          .range(copyFrom, copyFrom + 999);
+        if (copyErr || !copyPage || copyPage.length === 0) break;
+        allCopies = allCopies.concat(copyPage);
+        if (copyPage.length < 1000) break;
+        copyFrom += 1000;
+      }
+      if (allCopies.length > 0) {
         const parsed: Record<string, PastAvailability> = {};
-        copies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
+        allCopies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
         setPastAvailabilities(parsed);
       }
     }
@@ -207,9 +221,33 @@ export function useEventLogic(eventId: string) {
       return;
     }
 
-    // 2. 「その人たちがつけた〇△×」を取得
+    // 2. 「その人たちがつけた〇△×」を取得（Supabaseの1リクエスト最大1000件制限に対応するためページネーションで全件取得）
     const resIds = responses.map(r => r.id);
-    const { data: avails, error: availsError } = await supabase.from('availabilities').select('*').in('response_id', resIds);
+    const PAGE_SIZE = 1000;
+    let allAvails: any[] = [];
+    let from = 0;
+    let availsError: any = null;
+
+    while (true) {
+      const { data: pageData, error } = await supabase
+        .from('availabilities')
+        .select('*')
+        .in('response_id', resIds)
+        .order('response_id')
+        .order('slot_id')
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        availsError = error;
+        break;
+      }
+      if (!pageData || pageData.length === 0) break;
+
+      allAvails = allAvails.concat(pageData);
+      if (pageData.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    const avails = allAvails;
 
     if (availsError) {
       console.error('❌ 〇△×データの取得エラー:', availsError);
@@ -254,12 +292,28 @@ export function useEventLogic(eventId: string) {
     if (!resData || resData.length === 0) { setFetchingSchedules(false); return; }
 
     const resIds = resData.map(r => r.id);
-    const { data: avails } = await supabase.from('availabilities').select('slot_id, status').in('response_id', resIds).in('status', ['maru', 'sankaku']);
+    const candidateEventIds = [...new Set(resData.map(r => r.event_id))];
+
+    // まず回答済みイベントの中から「仮確定（is_confirmed = true）」の日程だけを取得する（1000件制限＆URL長制限の回避）
+    const { data: confirmedSlotsData } = await supabase
+      .from('slots')
+      .select('*')
+      .in('event_id', candidateEventIds)
+      .eq('is_confirmed', true);
+    if (!confirmedSlotsData || confirmedSlotsData.length === 0) { setFetchingSchedules(false); return; }
+
+    const confirmedSlotIds = confirmedSlotsData.map(s => s.id);
+    const { data: avails } = await supabase
+      .from('availabilities')
+      .select('slot_id, status')
+      .in('response_id', resIds)
+      .in('slot_id', confirmedSlotIds)
+      .in('status', ['maru', 'sankaku']);
     if (!avails || avails.length === 0) { setFetchingSchedules(false); return; }
 
-    const slotIds = avails.map(a => a.slot_id);
-    const { data: slotsData } = await supabase.from('slots').select('*').in('id', slotIds).eq('is_confirmed', true);
-    if (!slotsData || slotsData.length === 0) { setFetchingSchedules(false); return; }
+    const participatingSlotIds = new Set(avails.map(a => a.slot_id));
+    const slotsData = confirmedSlotsData.filter(s => participatingSlotIds.has(s.id));
+    if (slotsData.length === 0) { setFetchingSchedules(false); return; }
 
     const eventIds = [...new Set(slotsData.map(s => s.event_id))];
     const { data: eventsData } = await supabase.from('events').select('id, title').in('id', eventIds);
@@ -517,13 +571,15 @@ export function useEventLogic(eventId: string) {
     const userEmail = session?.user?.email || null;
 
     // 🚀 魔改造①：同じイベント内に「同じ名前」のデータが既にないか探す！
-    // （※エラーにならないように .single() じゃなくて .maybeSingle() を使うのがプロの技！）
-    const { data: existingUser } = await supabase
+    // （※過去に同名データが複数ある場合でもエラーにならないよう limit(1) で最新を取得）
+    const { data: existingUsers } = await supabase
       .from('responses')
       .select('id, guest_id')
       .eq('event_id', eventId)
       .eq('guest_name', guestName)
-      .maybeSingle(); 
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    const existingUser = existingUsers?.[0];
 
     // 🚀 魔改造②：使うIDを決定！（見つかれば過去のID、なければ今のブラウザのID）
     const targetGuestId = existingUser ? existingUser.guest_id : deviceGuestId;

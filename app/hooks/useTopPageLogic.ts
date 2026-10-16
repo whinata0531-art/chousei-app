@@ -109,12 +109,28 @@ export function useTopPageLogic() {
     if (!resData || resData.length === 0) { setFetchingSchedules(false); return; }
 
     const resIds = resData.map(r => r.id);
-    const { data: avails } = await supabase.from('availabilities').select('slot_id, status').in('response_id', resIds).in('status', ['maru', 'sankaku']);
+    const candidateEventIds = [...new Set(resData.map(r => r.event_id))];
+
+    // まず回答済みイベントの中から「仮確定（is_confirmed = true）」の日程だけを取得する（1000件制限＆URL長制限の回避）
+    const { data: confirmedSlotsData } = await supabase
+      .from('slots')
+      .select('*')
+      .in('event_id', candidateEventIds)
+      .eq('is_confirmed', true);
+    if (!confirmedSlotsData || confirmedSlotsData.length === 0) { setFetchingSchedules(false); return; }
+
+    const confirmedSlotIds = confirmedSlotsData.map(s => s.id);
+    const { data: avails } = await supabase
+      .from('availabilities')
+      .select('slot_id, status')
+      .in('response_id', resIds)
+      .in('slot_id', confirmedSlotIds)
+      .in('status', ['maru', 'sankaku']);
     if (!avails || avails.length === 0) { setFetchingSchedules(false); return; }
 
-    const slotIds = avails.map(a => a.slot_id);
-    const { data: slotsData } = await supabase.from('slots').select('*').in('id', slotIds).eq('is_confirmed', true);
-    if (!slotsData || slotsData.length === 0) { setFetchingSchedules(false); return; }
+    const participatingSlotIds = new Set(avails.map(a => a.slot_id));
+    const slotsData = confirmedSlotsData.filter(s => participatingSlotIds.has(s.id));
+    if (slotsData.length === 0) { setFetchingSchedules(false); return; }
 
     const eventIds = [...new Set(slotsData.map(s => s.event_id))];
     const { data: eventsData } = await supabase.from('events').select('id, title').in('id', eventIds);
