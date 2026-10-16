@@ -88,12 +88,18 @@ export default function ResultTab({ logic }: Props) {
     setIsShareModalOpen(true);
   };
 
-  // クリップボードにコピー
+  // 共有モード・モーダルを閉じて通常状態に戻す
+  const resetShareMode = () => {
+    setIsShareModalOpen(false);
+    setIsShareSelectMode(false);
+    setSelectedSlotIds([]);
+    setCopied(false);
+  };
+
+  // クリップボードにコピー（モーダルは閉じずに「コピーしました！」を表示）
   const handleCopyShareText = async () => {
     try {
       await navigator.clipboard.writeText(shareText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
     } catch {
       const textarea = document.createElement('textarea');
       textarea.value = shareText;
@@ -101,31 +107,49 @@ export default function ResultTab({ logic }: Props) {
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  // LINEで直接共有（トークの入力欄に自動入力される）
+  const openLineShare = (textToShare: string) => {
+    const encoded = encodeURIComponent(textToShare);
+    const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (isMobile) {
+      // スマホでは _blank で新しい空タブを開くと戻った時に真っ白な画面で身動きが取れなくなるため、
+      // 現在のページを維持したまま直接LINEアプリを起動するカスタムスキームを使用
+      window.location.href = `line://msg/text/?${encoded}`;
+    } else {
+      window.open(`https://line.me/R/share?text=${encoded}`, '_blank', 'noopener,noreferrer');
     }
   };
 
   // OSの共有シート（他のアプリの入力欄へ直接流し込む）を開く
   const handleNativeShare = async () => {
+    const textToShare = shareText;
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
-        await navigator.share({ text: shareText });
+        const sharePromise = navigator.share({ text: textToShare });
+        resetShareMode();
+        await sharePromise;
       } catch (e: any) {
-        // ユーザーがキャンセルした場合は何もしない
+        // ユーザーがキャンセルした場合もすでに通常画面に戻っているのでエラーは無視
         if (e?.name !== 'AbortError') {
           console.error('共有エラー:', e);
         }
       }
     } else {
-      // Web Share API非対応ブラウザ（一部のPCブラウザなど）ではLINE共有URLまたはコピーへ誘導
-      window.open(`https://line.me/R/share?text=${encodeURIComponent(shareText)}`, '_blank');
+      resetShareMode();
+      openLineShare(textToShare);
     }
   };
 
-  // LINEで直接共有（トークの入力欄に自動入力される）
   const handleLineShare = () => {
-    window.open(`https://line.me/R/share?text=${encodeURIComponent(shareText)}`, '_blank');
+    const textToShare = shareText;
+    resetShareMode();
+    openLineShare(textToShare);
   };
 
   return (
