@@ -39,6 +39,15 @@ export function useEventLogic(eventId: string) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleStr, setEditTitleStr] = useState('');
   const [editDescStr, setEditDescStr] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(prev => (prev?.message === message ? null : prev));
+    }, 3200);
+  };
 
   // 💡 魔法の自動復活システム：使える鍵を必ず持ってくる関数！
   const getValidGoogleToken = async () => {
@@ -198,12 +207,13 @@ export function useEventLogic(eventId: string) {
   };
 
   const handleSaveEventInfo = async () => {
-    if (!editTitleStr.trim()) return alert('タイトルを入力してください');
-    setLoading(true);
+    if (!editTitleStr.trim()) return showToast('タイトルを入力してください', 'error');
+    setSubmitting(true);
     await supabase.from('events').update({ title: editTitleStr, description: editDescStr }).eq('id', eventId);
     setEvent({ ...event, title: editTitleStr, description: editDescStr });
     setIsEditingTitle(false);
-    setLoading(false);
+    setSubmitting(false);
+    showToast('イベント情報を更新しました✨', 'success');
   };
 
   const fetchStats = async (currentSlots: Slot[]) => {
@@ -346,7 +356,7 @@ export function useEventLogic(eventId: string) {
     }
       
     if (!confirm(confirmMessage)) return;
-    setLoading(true);
+    setSubmitting(true);
 
     // 💡 古い取り方を消して、魔法のツールを呼ぶだけにする！
     const providerToken = await getValidGoogleToken();
@@ -400,18 +410,14 @@ export function useEventLogic(eventId: string) {
     }
 
     await supabase.from('slots').update({ is_confirmed: isConfirming }).eq('id', slotId);
-    
-    // ⭕ リロードの代わりに、最新データを引っ張ってくる関数を呼ぶ！
-    // （※関数名は君の `useEventLogic.ts` でデータ取得に使っている名前にしてね！ `fetchEventData()` や `loadEvent()` など）
     await fetchAll(); 
-    
-    // 💡 最初に setLoading(true) にしていたので、最後に必ず false に戻してあげる！
-    setLoading(false);
+    setSubmitting(false);
+    showToast(isConfirming ? '📌 日程を仮確定にしました！' : '仮確定を解除しました', 'success');
   };
 
   const applyWeeklyRoutine = () => {
     const savedRoutine = localStorage.getItem('weeklyRoutine');
-    if (!savedRoutine) return alert('「⚙️設定」から固定シフトを登録してね！');
+    if (!savedRoutine) return showToast('「⚙️設定」から固定シフトを登録してね！', 'info');
     const routine: WeeklyRoutine = JSON.parse(savedRoutine);
     const newAnswers = { ...answers };
     let appliedCount = 0;
@@ -452,8 +458,8 @@ export function useEventLogic(eventId: string) {
       }
     });
 
-    if (appliedCount === 0) alert('候補日程に合致するシフト設定がありませんでした。');
-    else { setAnswers(newAnswers); alert(`設定したシフトを ${appliedCount} 件の日程に反映したよ！`); }
+    if (appliedCount === 0) showToast('候補日程に合致するシフト設定がありませんでした', 'info');
+    else { setAnswers(newAnswers); showToast(`設定したシフトを ${appliedCount} 件の日程に反映しました✨`, 'success'); }
   };
 
   const applySmartCopy = () => {
@@ -492,16 +498,16 @@ export function useEventLogic(eventId: string) {
     });
 
     setAnswers(newAnswers);
-    alert(`クラウドの予定を優先して ${appliedCount} 件の回答を推測したよ！\n※念のためズレがないか確認してね！`);
+    showToast(`過去の予定から ${appliedCount} 件の回答を反映しました✨`, 'success');
   };
 
   const applyGoogleCalendar = async () => {
     // 💡 ここも魔法のツールに差し替え！
     const providerToken = await getValidGoogleToken();
 
-    if (!providerToken) return alert('Googleカレンダーと同期するには、「設定」からもう一度Googleでログイン（再認証）してね！');
+    if (!providerToken) return showToast('「⚙️設定」からもう一度Googleでログインしてね！', 'error');
     if (slots.length === 0) return;
-    setLoading(true);
+    setSubmitting(true);
 
     try {
       const startDates = slots.map(s => getFixedDate(s.start_at).getTime());
@@ -512,8 +518,8 @@ export function useEventLogic(eventId: string) {
       const gEvents = await fetchGoogleCalendarEvents(providerToken, minDate, maxDate);
 
       if (gEvents.length === 0) {
-        setLoading(false);
-        return alert('カレンダーの予定と被っている時間はありませんでした！✨');
+        setSubmitting(false);
+        return showToast('カレンダーの予定と被っている時間はありませんでした✨', 'info');
       }
 
       let appliedCount = 0;
@@ -533,20 +539,20 @@ export function useEventLogic(eventId: string) {
 
       if (appliedCount > 0) {
         setAnswers(newAnswers);
-        alert(`カレンダーと同期して、予定が被っている ${appliedCount} 枠を自動で「❌」にしたよ！📅`);
+        showToast(`予定が被っている ${appliedCount} 枠を自動で「❌」にしました📅`, 'success');
       } else {
-        alert('候補日程とGoogleカレンダーの予定は被っていませんでした！✨');
+        showToast('候補日程とGoogleカレンダーの予定は被っていませんでした✨', 'info');
       }
-    } catch (error) { alert('カレンダーの同期中にエラーが起きちゃいました💦'); }
-    setLoading(false);
+    } catch (error) { showToast('カレンダーの同期中にエラーが発生しました', 'error'); }
+    setSubmitting(false);
   };
 
   const addSlotToGoogleCalendar = async (startAt: string, endAt: string, title: string) => {
     // 💡 ここも魔法のツールに差し替え！
     const providerToken = await getValidGoogleToken();
-    if (!providerToken) return alert('Googleカレンダーに追加するには、「設定」からもう一度Googleでログインしてね！');
+    if (!providerToken) return showToast('「⚙️設定」からもう一度Googleでログインしてね！', 'error');
 
-    setLoading(true);
+    setSubmitting(true);
     try {
       const gEvent = {
         summary: `[最強調整] ${title}`,
@@ -558,15 +564,15 @@ export function useEventLogic(eventId: string) {
         headers: { Authorization: `Bearer ${providerToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(gEvent),
       });
-      if (res.ok) alert('🎉 Googleカレンダーに予定をバッチリ追加したよ！');
-      else alert('カレンダーへの追加に失敗しちゃいました💦');
-    } catch (error) { alert('通信エラーが起きました💦'); }
-    setLoading(false);
+      if (res.ok) showToast('🎉 Googleカレンダーに予定を追加しました！', 'success');
+      else showToast('カレンダーへの追加に失敗しました', 'error');
+    } catch (error) { showToast('通信エラーが発生しました', 'error'); }
+    setSubmitting(false);
   };
 
   const handleSubmit = async () => {
-    if (!guestName) return alert('名前を入力してね！');
-    setLoading(true);
+    if (!guestName) return showToast('お名前を入力してください！', 'error');
+    setSubmitting(true);
 
     const { data: { session } } = await supabase.auth.getSession();
     const userEmail = session?.user?.email || null;
@@ -598,8 +604,8 @@ export function useEventLogic(eventId: string) {
       .select('id').single();
 
     if (error || !resData) {
-      alert('保存に失敗しました💦');
-      setLoading(false);
+      showToast('保存に失敗しました💦', 'error');
+      setSubmitting(false);
       return;
     }
 
@@ -620,18 +626,18 @@ export function useEventLogic(eventId: string) {
     await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
 
     localStorage.setItem('lastGuestName', guestName);
-    alert('回答を保存しました！🎉\nクラウドに同期されたよ！');
     await fetchStats(slots);
     await fetchMySchedules(targetGuestId); // 💡 ここも targetGuestId に変更！
+    setSubmitting(false);
     setActiveTab('result');
-    setLoading(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast('回答を保存しました！🎉', 'success');
   };
 
   const handleDeleteEvent = async () => {
     if (!confirm('【警告】\n本当にこのイベントを完全に削除しますか？\n全員の回答データも消滅し、二度と復元できません！！')) return;
-    setLoading(true);
+    setSubmitting(true);
     await supabase.from('events').delete().eq('id', eventId);
-    alert('イベントを完全に削除しました。');
     window.location.href = '/'; 
   };
 
@@ -674,7 +680,8 @@ export function useEventLogic(eventId: string) {
   const isHost = event ? event.host_id === deviceGuestId : false;
 
   return {
-    activeTab, setActiveTab, event, setEvent, slots, loading,
+    activeTab, setActiveTab, event, setEvent, slots, loading, submitting,
+    toast, setToast, showToast,
     deviceGuestId, guestName, setGuestName, answers, setAnswers,
     pastAvailabilities, aggregated, matrix, sortType, setSortType,
     hideBatsu, setHideBatsu, isSummaryOpen, setIsSummaryOpen,

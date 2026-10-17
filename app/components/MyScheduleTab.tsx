@@ -44,8 +44,8 @@ export default function MyScheduleTab({ logic }: Props) {
                   e.preventDefault(); // 💡 魔法のコード：親の<Link>への移動をキャンセル！
                   logic.addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle);
                 }} 
-                disabled={logic.loading} 
-                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm relative z-10"
+                disabled={logic.submitting} 
+                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm relative z-10 disabled:opacity-50"
               >
                 📅 Googleカレンダーに追加
               </button>

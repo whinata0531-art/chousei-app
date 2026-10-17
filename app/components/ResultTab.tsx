@@ -174,8 +174,8 @@ export default function ResultTab({ logic }: Props) {
   return (
     <>
       <div className="space-y-6">
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow border-t-4 border-green-500 transition-all">
-          <div className="sticky top-[4.5rem] z-20 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md p-6 border-b dark:border-gray-700 shadow-sm rounded-t-xl">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow transition-all">
+          <div className="sticky top-[3.75rem] z-20 bg-white dark:bg-gray-900 border-t-4 border-t-green-500 dark:border-t-green-500 px-6 py-4 border-b border-b-gray-200 dark:border-b-gray-700 shadow-sm rounded-t-xl">
             <button onClick={() => logic.setIsSummaryOpen(!logic.isSummaryOpen)} className="w-full flex items-center justify-between focus:outline-none">
               <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">📊 日程ごとの集計</h2>
               <div className="p-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 transition-colors">
