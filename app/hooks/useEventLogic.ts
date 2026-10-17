@@ -40,6 +40,7 @@ export function useEventLogic(eventId: string) {
   const [editTitleStr, setEditTitleStr] = useState('');
   const [editDescStr, setEditDescStr] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [isShiftPromptOpen, setIsShiftPromptOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -457,8 +458,16 @@ export function useEventLogic(eventId: string) {
 
   const applyWeeklyRoutine = () => {
     const savedRoutine = localStorage.getItem('weeklyRoutine');
-    if (!savedRoutine) return showToast('「⚙️設定」から固定シフトを登録してね！', 'info');
+    if (!savedRoutine) {
+      setIsShiftPromptOpen(true);
+      return;
+    }
     const routine: WeeklyRoutine = JSON.parse(savedRoutine);
+    const hasAnySlot = Object.values(routine).some(arr => Array.isArray(arr) && arr.length > 0);
+    if (!hasAnySlot) {
+      setIsShiftPromptOpen(true);
+      return;
+    }
     const newAnswers = { ...answers };
     let appliedCount = 0;
 
@@ -729,6 +738,7 @@ export function useEventLogic(eventId: string) {
 
   return {
     activeTab, setActiveTab, event, setEvent, slots, loading, submitting,
+    isShiftPromptOpen, setIsShiftPromptOpen,
     toast, setToast, showToast,
     deviceGuestId, guestName, setGuestName, answers, setAnswers,
     pastAvailabilities, aggregated, matrix, sortType, setSortType,

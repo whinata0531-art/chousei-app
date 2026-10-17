@@ -1,5 +1,6 @@
 // app/components/ResponseTab.tsx
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { CalendarCheck, CalendarDays, History, Loader2, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -10,6 +11,7 @@ import { Slot, Status } from '../types';
 type Props = { logic: ReturnType<typeof useEventLogic> };
 
 export default function ResponseTab({ logic }: Props) {
+  const router = useRouter();
   const [isBulkOpen, setIsBulkOpen] = useState(false);
 
   // 日付ごとに候補枠をグループ化（日付見出しをセクションごとにSticky固定するため）
@@ -226,6 +228,44 @@ export default function ResponseTab({ logic }: Props) {
               {logic.submitting ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
               {logic.submitting ? '送信中...' : '回答を送信する'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 📅 固定シフト未登録時のコンパクトな案内モーダル */}
+      {logic.isShiftPromptOpen && (
+        <div className="fixed inset-0 mb-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border dark:border-gray-700 w-full max-w-xs p-5 text-center animate-fade-in">
+            <div className="w-11 h-11 mx-auto mb-3 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <CalendarDays size={22} />
+            </div>
+            <h3 className="text-base font-bold text-gray-800 dark:text-gray-100 mb-1.5">
+              固定シフトを登録しますか？
+            </h3>
+            <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed mb-4">
+              バイトや授業など、毎週の予定を登録しておくとワンタップで自動反映できます。
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => logic.setIsShiftPromptOpen(false)}
+                className="flex-1 py-2.5 px-3 rounded-xl text-xs font-bold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+              >
+                あとで
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  logic.setIsShiftPromptOpen(false);
+                  localStorage.setItem('returnPath', window.location.pathname);
+                  localStorage.setItem('openShiftAccordion', 'true');
+                  router.push('/settings');
+                }}
+                className="flex-1 py-2.5 px-3 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white shadow-sm transition"
+              >
+                登録する
+              </button>
+            </div>
           </div>
         </div>
       )}

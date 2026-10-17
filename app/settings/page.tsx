@@ -13,14 +13,23 @@ function AccordionItem({
   title, 
   icon, 
   borderColorClass, 
+  storageTriggerKey,
   children 
 }: { 
   title: string, 
   icon: React.ReactNode, 
   borderColorClass: string, 
+  storageTriggerKey?: string,
   children: React.ReactNode 
 }) {
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (storageTriggerKey && localStorage.getItem(storageTriggerKey) === 'true') {
+      localStorage.removeItem(storageTriggerKey);
+      setIsOpen(true);
+    }
+  }, [storageTriggerKey]);
 
   return (
     <div className={`bg-white dark:bg-gray-900 rounded-xl shadow-md border-t-4 ${borderColorClass} overflow-hidden`}>
@@ -207,6 +216,7 @@ export default function SettingsPage() {
         title="曜日ごとの固定シフト" 
         icon={<CalendarDays className="text-purple-600 dark:text-purple-400" size={24} />}
         borderColorClass="border-purple-500"
+        storageTriggerKey="openShiftAccordion"
       >
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-100 dark:border-purple-800/30">
           「月曜の14-16時は⭕️、20-24時は🔺」のように、いつもの予定を登録しておくと、回答画面でワンタップで一気に自動入力できます！
