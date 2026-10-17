@@ -51,23 +51,38 @@ export function useEventLogic(eventId: string) {
 
   // 💡 魔法の自動復活システム：使える鍵を必ず持ってくる関数！
   const getValidGoogleToken = async () => {
+    // 0. まず現在のSupabaseセッション内にトークンがあればポケット（localStorage）を最新化する
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.provider_token) {
+      localStorage.setItem('google_provider_token', session.provider_token);
+    }
+    if (session?.provider_refresh_token) {
+      localStorage.setItem('google_refresh_token', session.provider_refresh_token);
+    }
+
     // 1. ポケットから今の鍵（Access Token）とマスターキー（Refresh Token）を出す
     let accessToken = localStorage.getItem('google_provider_token');
     const refreshToken = localStorage.getItem('google_refresh_token');
 
-    // もし鍵がどっちも無ければ、そもそもGoogleログインしてないってことだから諦める
-    if (!accessToken || !refreshToken) return null;
+    // もし両方とも無ければ、Googleログインのトークンが保存されていない
+    if (!accessToken && !refreshToken) return null;
 
-    // 2. 今の鍵がまだ生きてるか、Googleに軽くジャブを打って確認する（カレンダー一覧をリクエストしてみる）
-    const testRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    // 2. Access Tokenがある場合、まだ生きているかGoogleに確認する
+    let needsRefresh = !accessToken;
+    if (accessToken) {
+      const testRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (testRes.status === 401) {
+        needsRefresh = true;
+      }
+    }
 
-    // 3. もし鍵が腐ってたら（401 Unauthorized エラーが返ってきたら）
-    if (testRes.status === 401) {
-      console.log('🔄 鍵が1時間で腐ってたから、秘密の小部屋（API）で新しいのをもらってくるぜ！');
+    // 3. 鍵が無い・または1時間経って期限切れ（401）の場合、マスターキー（Refresh Token）で新しい鍵をもらう
+    if (needsRefresh) {
+      if (!refreshToken) return null;
+      console.log('🔄 鍵が期限切れのため、APIで新しいアクセストークンを取得します');
       
-      // さっき作った自分のバックエンドAPIをノックする！
       const refreshRes = await fetch('/api/refresh-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,23 +91,48 @@ export function useEventLogic(eventId: string) {
 
       if (refreshRes.ok) {
         const data = await refreshRes.json();
-        accessToken = data.accessToken; // ピッカピカの新しい鍵をゲット！
-        localStorage.setItem('google_provider_token', accessToken as string); // ポケットの古い鍵を捨てて、新しい鍵に入れ替える！
-        console.log('✨ 新しい鍵の取得に成功！カレンダー操作を続行するよ！');
+        accessToken = data.accessToken;
+        localStorage.setItem('google_provider_token', accessToken as string);
+        console.log('✨ 新しい鍵の取得に成功！カレンダー操作を続行します');
       } else {
-        // マスターキーすら無効になってた場合（ユーザーがGoogleのパスワード変えた時とか）
-        console.error('マスターキーも使えなくなってた💦 もう一度ログインが必要だよ！');
+        console.error('マスターキーでの更新に失敗しました。再ログインが必要です。');
         return null; 
       }
     }
 
-    // 4. 絶対に使える（生きている）鍵を返す！
+    // 4. 使える（生きている）鍵を返す！
     return accessToken;
+  };
+
+  // トークンが完全に切れていた場合、設定画面へ行ってログアウトし直さなくてもその場で自動再連携して現在のページに戻す
+  const reconnectGoogleHere = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const queryParams: Record<string, string> = {
+      access_type: 'offline',
+      prompt: 'consent',
+    };
+    if (session?.user?.email) {
+      queryParams.login_hint = session.user.email;
+    }
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        scopes: 'https://www.googleapis.com/auth/calendar',
+        queryParams,
+        redirectTo: window.location.href,
+      },
+    });
   };
 
   // 💡 ① useEffectの外に、fetchAll関数を独立させて作る！（中身は今のままでOK）
   const fetchAll = async () => {
     const { data: { session } } = await supabase.auth.getSession();
+    if (session?.provider_token) {
+      localStorage.setItem('google_provider_token', session.provider_token);
+    }
+    if (session?.provider_refresh_token) {
+      localStorage.setItem('google_refresh_token', session.provider_refresh_token);
+    }
     if (session?.user) setIsGoogleLoggedIn(true);
 
     let currentGuestId = localStorage.getItem('deviceGuestId');
@@ -505,7 +545,11 @@ export function useEventLogic(eventId: string) {
     // 💡 ここも魔法のツールに差し替え！
     const providerToken = await getValidGoogleToken();
 
-    if (!providerToken) return showToast('「⚙️設定」からもう一度Googleでログインしてね！', 'error');
+    if (!providerToken) {
+      showToast('Googleカレンダーの連携を更新します...', 'info');
+      await reconnectGoogleHere();
+      return;
+    }
     if (slots.length === 0) return;
     setSubmitting(true);
 
@@ -550,7 +594,11 @@ export function useEventLogic(eventId: string) {
   const addSlotToGoogleCalendar = async (startAt: string, endAt: string, title: string) => {
     // 💡 ここも魔法のツールに差し替え！
     const providerToken = await getValidGoogleToken();
-    if (!providerToken) return showToast('「⚙️設定」からもう一度Googleでログインしてね！', 'error');
+    if (!providerToken) {
+      showToast('Googleカレンダーの連携を更新します...', 'info');
+      await reconnectGoogleHere();
+      return;
+    }
 
     setSubmitting(true);
     try {

@@ -74,6 +74,14 @@ export default function SettingsPage() {
 
     // 💡 関数をちょっと書き換え！（sessionを引数でもらうようにしたよ）
     const checkAuthAndMerge = async (session: any) => {
+      // Googleからリダイレクトで戻ってきた瞬間（/settings）にトークンを確実にポケット（localStorage）に保存する！
+      if (session?.provider_token) {
+        localStorage.setItem('google_provider_token', session.provider_token);
+      }
+      if (session?.provider_refresh_token) {
+        localStorage.setItem('google_refresh_token', session.provider_refresh_token);
+      }
+
       if (session?.user) {
         setUser(session.user); // ここで「連携完了！」に切り替わる！
         
@@ -101,8 +109,15 @@ export default function SettingsPage() {
 
     // 💡 ② ここが超重要！！ログイン状態の変化を「監視」する！
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.provider_token) {
+        localStorage.setItem('google_provider_token', session.provider_token);
+      }
+      if (session?.provider_refresh_token) {
+        localStorage.setItem('google_refresh_token', session.provider_refresh_token);
+      }
+
       // Googleから帰ってきて解読が終わった瞬間にここが動く！
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         checkAuthAndMerge(session);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
@@ -162,6 +177,8 @@ export default function SettingsPage() {
 
   const handleLogout = async () => {
     if (confirm('ログアウトしますか？（データは消えません！）')) {
+      localStorage.removeItem('google_provider_token');
+      localStorage.removeItem('google_refresh_token');
       await supabase.auth.signOut();
       window.location.reload(); 
     }
