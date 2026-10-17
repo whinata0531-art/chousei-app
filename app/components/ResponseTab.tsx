@@ -43,8 +43,13 @@ export default function ResponseTab({ logic }: Props) {
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow p-6 border-t-4 border-t-blue-500 dark:border-t-blue-500 relative">
-        <div className="mb-4">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow px-6 pb-6 relative">
+        {/* カード最上部の青いバー＋角丸＋余白（常に1つだけ上部に残り、スクロール時は名前欄などがこの下にすーっと潜り込む） */}
+        <div className="sticky top-[3.75rem] z-30 -mx-6 bg-gray-50 dark:bg-[#0a0a0a]">
+          <div className="h-3 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 rounded-t-xl" />
+        </div>
+
+        <div className="mb-4 pt-3">
           <label className="block text-sm font-bold mb-1 dark:text-gray-300">お名前 *</label>
           <input
             type="text"
@@ -89,7 +94,7 @@ export default function ResponseTab({ logic }: Props) {
         </div>
 
         {/* 見出し＆端のコンパクトな一括変更アコーディオン */}
-        <div className="mb-3">
+        <div className="mb-2">
           <div className="flex justify-between items-end border-b dark:border-gray-700 pb-2">
             <h3 className="font-bold text-base text-gray-800 dark:text-gray-100">日程の選択</h3>
             <button
@@ -129,11 +134,11 @@ export default function ResponseTab({ logic }: Props) {
           )}
         </div>
 
-        {/* 日付ごとのグループ（スクロール時に青ライン＆角丸付き日付ヘッダーがピタッと上に固定され、予定がその下に潜り込む） */}
+        {/* 日付ごとのグループ（普段はシンプルな日付バーで、スクロール時に上部の青いバーの下にピタッと合体する） */}
         <div className="space-y-4 mb-6">
           {groupedByDate.map(group => (
             <div key={group.dateKey} className="relative">
-              <div className="sticky top-[3.75rem] z-20 -mx-6 px-6 py-2.5 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 border-b border-b-gray-100 dark:border-b-gray-800 rounded-t-xl shadow-sm flex items-center justify-between">
+              <div className="sticky top-[4.5rem] z-20 -mx-6 px-6 pt-1 pb-2.5 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between">
                 <span className="text-sm font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
                   📅 {group.label}
                 </span>
