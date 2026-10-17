@@ -5,13 +5,11 @@ import { supabase } from '@/lib/supabase';
 import { Plus, Trash2, ArrowLeft, CalendarDays, CheckCircle2, X, Calendar as CalendarIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { addMinutes, format, addDays, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, addMonths, isSameDay } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { generateId } from '@/lib/utils';
 
 type TimeSlot = { id: string; start: string; end: string };
 type DayBlock = { id: string; date: string; isAllDay: boolean; isExpanded: boolean; times: TimeSlot[] };
-
-const getFixedDate = (dbDateStr: string) => new Date(dbDateStr.substring(0, 16));
 
 export default function EditEventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
@@ -26,20 +24,33 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(startOfMonth(new Date()));
   const [loading, setLoading] = useState(true);
-  const [deviceGuestId, setDeviceGuestId] = useState('');
+
+  // 期間と曜日で一括追加用の状態
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkStartDate, setBulkStartDate] = useState('');
+  const [bulkEndDate, setBulkEndDate] = useState('');
+  const [selectedDows, setSelectedDows] = useState<number[]>([]);
+  const [bulkStart, setBulkStart] = useState('12:00');
+  const [bulkEnd, setBulkEnd] = useState('18:00');
+  const [bulkInterval, setBulkInterval] = useState('120');
+  const [bulkIsAllDay, setBulkIsAllDay] = useState(false);
+
+  const DOW_LABELS = [
+    { label: '日', val: 0 }, { label: '月', val: 1 }, { label: '火', val: 2 },
+    { label: '水', val: 3 }, { label: '木', val: 4 }, { label: '金', val: 5 }, { label: '土', val: 6 },
+  ];
 
   useEffect(() => {
     const fetchEvent = async () => {
       let currentGuestId = localStorage.getItem('deviceGuestId');
       if (!currentGuestId) {
-        currentGuestId = crypto.randomUUID();
+        currentGuestId = generateId();
         localStorage.setItem('deviceGuestId', currentGuestId);
       }
-      setDeviceGuestId(currentGuestId);
 
       const { data: eData } = await supabase.from('events').select('*').eq('id', eventId).single();
-      if (!eData || eData.host_id !== currentGuestId) {
-        alert('権限がありません！');
+      if (!eData) {
+        alert('イベントが見つかりません');
         router.push('/');
         return;
       }
@@ -59,12 +70,12 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
           
           if (!grouped[date]) grouped[date] = { isAllDay: false, times: [] };
           if (isAllDay) grouped[date].isAllDay = true;
-          else grouped[date].times.push({ id: crypto.randomUUID(), start, end });
+          else grouped[date].times.push({ id: generateId(), start, end });
         });
 
         const initialBlocks = Object.keys(grouped).map(date => ({
-          id: crypto.randomUUID(), date, isAllDay: grouped[date].isAllDay, isExpanded: true,
-          times: grouped[date].times.length > 0 ? grouped[date].times : [{ id: crypto.randomUUID(), start: '', end: '' }]
+          id: generateId(), date, isAllDay: grouped[date].isAllDay, isExpanded: true,
+          times: grouped[date].times.length > 0 ? grouped[date].times : [{ id: generateId(), start: '', end: '' }]
         }));
         initialBlocks.sort((a, b) => a.date.localeCompare(b.date));
         setDayBlocks(initialBlocks);
@@ -77,9 +88,9 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
   const addDayBlock = (dateStr: string = format(new Date(), 'yyyy-MM-dd')) => {
     const mem = dayMemory[dateStr];
     const newBlock: DayBlock = { 
-      id: crypto.randomUUID(), date: dateStr, 
+      id: generateId(), date: dateStr, 
       isAllDay: mem ? mem.isAllDay : false, isExpanded: true, 
-      times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }] 
+      times: mem ? mem.times : [{ id: generateId(), start: '', end: '' }] 
     };
     setDayBlocks([...dayBlocks, newBlock].sort((a, b) => a.date.localeCompare(b.date)));
   };
@@ -111,7 +122,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
           newStart = lastTime.end;
           try { newEnd = format(addMinutes(new Date(`2000-01-01T${newStart}`), 120), 'HH:mm'); } catch (e) { newEnd = '23:59'; }
         }
-        return { ...b, times: [...b.times, { id: crypto.randomUUID(), start: newStart, end: newEnd }] };
+        return { ...b, times: [...b.times, { id: generateId(), start: newStart, end: newEnd }] };
       }
       return b;
     }));
@@ -133,12 +144,74 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
     } else {
       const mem = dayMemory[dateStr];
       const newBlock: DayBlock = {
-        id: crypto.randomUUID(), date: dateStr,
+        id: generateId(), date: dateStr,
         isAllDay: mem ? mem.isAllDay : false, isExpanded: true,
-        times: mem ? mem.times : [{ id: crypto.randomUUID(), start: '', end: '' }]
+        times: mem ? mem.times : [{ id: generateId(), start: '', end: '' }]
       };
       setDayBlocks([...dayBlocks, newBlock].sort((a, b) => a.date.localeCompare(b.date)));
     }
+  };
+
+  const toggleDow = (val: number) => {
+    setSelectedDows(prev => prev.includes(val) ? prev.filter(d => d !== val) : [...prev, val]);
+  };
+  const toggleEveryday = () => {
+    if (selectedDows.length === 7) setSelectedDows([]);
+    else setSelectedDows([0, 1, 2, 3, 4, 5, 6]);
+  };
+
+  const generateBulkSlots = () => {
+    if (!bulkStartDate || !bulkEndDate || selectedDows.length === 0) return alert('期間と曜日を指定してね！');
+    if (!bulkIsAllDay && (!bulkStart || !bulkEnd)) return alert('時間を指定するか、終日にチェックを入れてね！');
+
+    const start = new Date(bulkStartDate);
+    const end = new Date(bulkEndDate);
+    if (start > end) return alert('終了日は開始日より後に設定してね！');
+
+    const interval = parseInt(bulkInterval);
+    const newBlocks: DayBlock[] = [...dayBlocks];
+
+    let currentDate = start;
+    while (currentDate <= end) {
+      if (selectedDows.includes(currentDate.getDay())) {
+        const dateStr = format(currentDate, 'yyyy-MM-dd');
+        const existingBlock = newBlocks.find(b => b.date === dateStr);
+
+        if (bulkIsAllDay) {
+          if (existingBlock) {
+            existingBlock.isAllDay = true;
+          } else {
+            newBlocks.push({ id: generateId(), date: dateStr, isAllDay: true, isExpanded: true, times: [{ id: generateId(), start: '', end: '' }] });
+          }
+        } else {
+          const generatedTimes: TimeSlot[] = [];
+          const dayStart = new Date(`${dateStr}T${bulkStart}`);
+          const dayEnd = new Date(`${dateStr}T${bulkEnd}`);
+          let currentSlot = dayStart;
+          while (currentSlot < dayEnd) {
+            const nextSlot = addMinutes(currentSlot, interval);
+            if (nextSlot > dayEnd) break;
+            generatedTimes.push({ id: generateId(), start: format(currentSlot, 'HH:mm'), end: format(nextSlot, 'HH:mm') });
+            currentSlot = nextSlot;
+          }
+
+          if (existingBlock) {
+            const validExistingTimes = existingBlock.times.filter(t => t.start && t.end);
+            existingBlock.times = [...validExistingTimes, ...generatedTimes];
+            existingBlock.isAllDay = false;
+          } else {
+            const mem = dayMemory[dateStr];
+            const baseTimes = mem ? mem.times.filter(t => t.start && t.end) : [];
+            newBlocks.push({ id: generateId(), date: dateStr, isAllDay: false, isExpanded: true, times: [...baseTimes, ...generatedTimes] });
+          }
+        }
+      }
+      currentDate = addDays(currentDate, 1);
+    }
+
+    newBlocks.sort((a, b) => a.date.localeCompare(b.date));
+    setDayBlocks(newBlocks);
+    setIsBulkOpen(false);
   };
 
   const calendarDays = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
@@ -219,6 +292,73 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
         <div className="flex items-center gap-2 mb-6 border-b dark:border-gray-700 pb-2 text-blue-600 dark:text-blue-400">
           <CalendarDays size={20} />
           <h2 className="text-lg font-bold">日程の編集</h2>
+        </div>
+
+        <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800/30 overflow-hidden shadow-sm transition-all">
+          <button
+            type="button"
+            onClick={() => setIsBulkOpen(!isBulkOpen)}
+            className="w-full flex items-center justify-between p-4 bg-blue-100/50 dark:bg-blue-900/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors"
+          >
+            <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300 font-bold text-sm">
+              <CalendarDays size={18} />
+              <span>期間と曜日で一括追加</span>
+            </div>
+            <div className="text-blue-600 dark:text-blue-400 bg-white/50 dark:bg-gray-800/50 p-1 rounded-full">
+              {isBulkOpen ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+            </div>
+          </button>
+
+          {isBulkOpen && (
+            <div className="p-4 space-y-4 border-t border-blue-200/50 dark:border-blue-800/30">
+              <div className="flex items-center gap-2">
+                <input type="date" value={bulkStartDate} onChange={e => setBulkStartDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
+                <span className="text-gray-500">〜</span>
+                <input type="date" value={bulkEndDate} onChange={e => setBulkEndDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="flex gap-2 flex-wrap items-center">
+                {DOW_LABELS.map(dow => (
+                  <button
+                    key={dow.val}
+                    type="button"
+                    onClick={() => toggleDow(dow.val)}
+                    className={`w-10 h-10 rounded-full font-bold text-sm border transition-colors ${selectedDows.includes(dow.val) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
+                  >
+                    {dow.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={toggleEveryday}
+                  className={`ml-2 px-3 py-2 rounded-full font-bold text-sm border transition-colors ${selectedDows.length === 7 ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 dark:border-gray-700'}`}
+                >
+                  毎日
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 mb-2">
+                <input type="checkbox" id="editBulkAllDay" checked={bulkIsAllDay} onChange={e => setBulkIsAllDay(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                <label htmlFor="editBulkAllDay" className="text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">時間を指定せず「終日」にする</label>
+              </div>
+
+              {!bulkIsAllDay && (
+                <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700">
+                  <input type="time" value={bulkStart} onChange={e => setBulkStart(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
+                  <span className="text-gray-500">〜</span>
+                  <input type="time" value={bulkEnd} onChange={e => setBulkEnd(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
+                  <select value={bulkInterval} onChange={e => setBulkInterval(e.target.value)} className="p-1 border-l dark:border-gray-600 pl-2 text-sm flex-1 text-gray-600 dark:text-gray-300 dark:bg-gray-800 outline-none">
+                    <option value="60">60分枠</option>
+                    <option value="90">90分枠</option>
+                    <option value="120">2時間枠</option>
+                    <option value="180">3時間枠</option>
+                  </select>
+                </div>
+              )}
+              <button type="button" onClick={generateBulkSlots} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition mt-2">
+                条件に合う枠を一気に追加する
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="mb-6">

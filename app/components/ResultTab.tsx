@@ -88,9 +88,6 @@ export default function ResultTab({ logic }: Props) {
     }
   };
 
-  const confIds = logic.confirmedSlots.map(s => s.id);
-  const isAllConfSelected = confIds.length > 0 && confIds.every(id => selectedSlotIds.includes(id));
-
   const visibleIds = logic.sortedAndFilteredSlots.map(s => s.id);
   const isAllVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedSlotIds.includes(id));
 
@@ -241,18 +238,6 @@ export default function ResultTab({ logic }: Props) {
                         🌟 おすすめ
                       </button>
                     )}
-                    {confIds.length > 0 && (
-                      <button
-                        onClick={() => toggleGroupIds(confIds)}
-                        className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                          isAllConfSelected
-                            ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm'
-                            : 'bg-white dark:bg-gray-800 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-700 hover:bg-yellow-50'
-                        }`}
-                      >
-                        📌 仮確定
-                      </button>
-                    )}
                     <button
                       onClick={() => toggleGroupIds(visibleIds)}
                       className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
@@ -275,7 +260,7 @@ export default function ResultTab({ logic }: Props) {
                 </div>
               )}
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {logic.sortedAndFilteredSlots.map((slot) => {
                 const tier = logic.getSlotTier(slot);
                 const isSelected = selectedSlotIds.includes(slot.id);
@@ -288,21 +273,18 @@ export default function ResultTab({ logic }: Props) {
                   <div
                     key={slot.id}
                     onClick={isShareSelectMode ? () => toggleSelectSlot(slot.id) : undefined}
-                    className={`p-4 border rounded-xl flex flex-col gap-3 transition-all ${
+                    className={`p-4 border rounded-xl flex flex-col gap-2 transition-all ${
                       isShareSelectMode ? 'cursor-pointer select-none' : ''
                     } ${
                       isShareSelectMode && isSelected
                         ? 'ring-4 ring-blue-500 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 transform scale-[1.01]'
-                        : slot.is_confirmed
-                        ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-400 dark:border-yellow-600/50 shadow-md transform scale-[1.02]'
                         : highlightClass
                     }`}
                   >
                     {/* 1. 日時やラベル（一番上） */}
-                    <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2">
                       <div>
-                        {slot.is_confirmed && <span className="inline-block px-3 py-1 bg-yellow-500 dark:bg-yellow-600 text-white text-[10px] font-bold rounded-full mb-1.5 shadow-sm animate-pulse">✨ 仮確定 ✨</span>}
-                        {!slot.is_confirmed && tier === 1 && <span className="inline-block px-2 py-1 bg-green-500 text-white text-[10px] font-bold rounded mb-1.5 shadow-sm">🌟 おすすめ</span>}
+                        {tier === 1 && <span className="inline-block px-2 py-1 bg-green-500 text-white text-[10px] font-bold rounded mb-1 shadow-sm">🌟 おすすめ</span>}
                         <div className="font-bold text-base sm:text-lg dark:text-gray-100 tracking-tight">
                           {format(getFixedDate(slot.start_at), 'M/d (E)', { locale: ja })} {formatSlotTime(slot.start_at, slot.end_at)}
                         </div>
@@ -316,7 +298,7 @@ export default function ResultTab({ logic }: Props) {
                     </div>
 
                     {/* 2. 左に集計、右に名前（横並びにして空きスペースをフル活用！） */}
-                    <div className="flex flex-row items-start justify-between gap-3 mb-2">
+                    <div className="flex flex-row items-start justify-between gap-3">
       
                       {/* 左側：〇△×の集計 */}
                       <div className="flex gap-4 text-center shrink-0 pt-1">
@@ -326,7 +308,7 @@ export default function ResultTab({ logic }: Props) {
                       </div>
 
                       {/* 右側：名前バッジ（右詰めで配置し、人数が多い場合は折り返す） */}
-                      <div className="flex-1 flex flex-wrap justify-end content-start gap-1 pl-3 border-l border-gray-100 dark:border-gray-700 min-h-[40px]">
+                      <div className="flex-1 flex flex-wrap justify-end content-start gap-1 pl-3 border-l border-gray-100 dark:border-gray-700 min-h-[36px]">
                         {logic.matrix.map((row, idx) => {
                           const status = row.answers[slot.id];
                           if (status !== 'sankaku' && status !== 'batsu') return null;
@@ -344,17 +326,6 @@ export default function ResultTab({ logic }: Props) {
                         })}
                       </div>
                     </div>
-
-                    {!isShareSelectMode && (
-                      <div className="border-t border-gray-200/60 dark:border-gray-700 pt-3 mt-1 text-right flex justify-end gap-2">
-                        <button 
-                          onClick={() => logic.toggleConfirmSlot(slot.id, slot.is_confirmed, slot.start_at, slot.end_at)}
-                          className={`px-4 py-2 text-sm font-bold rounded-lg shadow transition-colors ${slot.is_confirmed ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600' : 'bg-yellow-400 dark:bg-yellow-500/80 text-yellow-900 dark:text-yellow-50 hover:bg-yellow-500 dark:hover:bg-yellow-500'}`}
-                        >
-                          {slot.is_confirmed ? '仮確定を解除' : '📌 仮確定にする'}
-                        </button>
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -377,14 +348,13 @@ export default function ResultTab({ logic }: Props) {
                     {[...logic.aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
                       const tier = logic.getSlotTier(slot);
                       const headerClass = 
-                        slot.is_confirmed ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700/50' :
                         tier === 1 ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700' :
                         tier === 2 ? 'bg-orange-100 dark:bg-yellow-900/30 text-orange-800 dark:text-yellow-400 border-orange-200 dark:border-yellow-700/50' : 
                         'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 dark:border-gray-700';
                       
                       return (
                         <th key={slot.id} className={`p-3 border-b-2 text-xs font-medium ${headerClass}`}>
-                          {slot.is_confirmed && '📌'}{!slot.is_confirmed && tier === 1 && '🌟'}<br/>
+                          {tier === 1 && '🌟'}<br/>
                           {format(getFixedDate(slot.start_at), 'M/d(E)', { locale: ja })}<br/>
                           {formatSlotTime(slot.start_at, slot.end_at)}
                         </th>
@@ -399,7 +369,6 @@ export default function ResultTab({ logic }: Props) {
                       {[...logic.aggregated].sort((a, b) => a.originalIndex - b.originalIndex).map(slot => {
                         const tier = logic.getSlotTier(slot);
                         const cellClass = 
-                          slot.is_confirmed ? 'bg-yellow-50 dark:bg-yellow-900/20' :
                           tier === 1 ? 'bg-green-50 dark:bg-green-900/20' :
                           tier === 2 ? 'bg-orange-50/50 dark:bg-yellow-900/20' : 'dark:bg-gray-800';
                           

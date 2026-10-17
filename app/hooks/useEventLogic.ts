@@ -7,7 +7,7 @@ import { getFixedDate, generateId } from '../../lib/utils';
 import { Slot, Status, PastAvailability, AggregatedSlot, MatrixData, ConfirmedSchedule, RecentEvent, RoutineSlot, WeeklyRoutine } from '@/app/types';
 
 export function useEventLogic(eventId: string) {
-  const [activeTab, setActiveTab] = useState<'response' | 'result' | 'my-schedule'>('response');
+  const [activeTab, setActiveTab] = useState<'response' | 'result'>('response');
   const [event, setEvent] = useState<any>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,9 +143,6 @@ export function useEventLogic(eventId: string) {
     }
     setDeviceGuestId(currentGuestId);
 
-    fetchMySchedules(currentGuestId);
-    fetchRecentEvents(currentGuestId);
-
     // 💡 修正後：エラー（error）も受け取って、エラーなら爆発させる！💥
     const { data: eData, error: eError } = await supabase.from('events').select('*').eq('id', eventId).single();
     
@@ -164,6 +161,7 @@ export function useEventLogic(eventId: string) {
     if (eData) {
       setEvent(eData);
       await supabase.from('user_recent_events').upsert({ guest_id: currentGuestId, event_id: eventId, event_title: eData.title, accessed_at: Date.now() }, { onConflict: 'guest_id,event_id' });
+      fetchRecentEvents(currentGuestId);
     }
     
     if (sData) {
@@ -669,6 +667,10 @@ export function useEventLogic(eventId: string) {
     // 🚀 魔改造④：もし別ブラウザの過去データと合体した場合、今のブラウザのIDも過去のヤツに上書きしちゃう！
     // （これで以降のスマートコピーとかも全部一人の人間として繋がる！）
     if (existingUser && existingUser.guest_id !== deviceGuestId) {
+      if (event && event.host_id === deviceGuestId) {
+        await supabase.from('events').update({ host_id: existingUser.guest_id }).eq('id', eventId);
+        setEvent({ ...event, host_id: existingUser.guest_id });
+      }
       localStorage.setItem('deviceGuestId', existingUser.guest_id);
       setDeviceGuestId(existingUser.guest_id);
     }
@@ -684,7 +686,6 @@ export function useEventLogic(eventId: string) {
 
     localStorage.setItem('lastGuestName', guestName);
     await fetchStats(slots);
-    await fetchMySchedules(targetGuestId); // 💡 ここも targetGuestId に変更！
     setSubmitting(false);
     setActiveTab('result');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -704,9 +705,6 @@ export function useEventLogic(eventId: string) {
     let result = [...aggregated];
     if (hideBatsu) result = result.filter(s => s.batsu === 0);
     result.sort((a, b) => {
-      if (a.is_confirmed && !b.is_confirmed) return -1;
-      if (!a.is_confirmed && b.is_confirmed) return 1;
-
       if (sortType === 'time') return getFixedDate(a.start_at).getTime() - getFixedDate(b.start_at).getTime();
       else if (sortType === 'maru') {
         if (b.maru !== a.maru) return b.maru - a.maru;

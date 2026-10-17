@@ -72,7 +72,6 @@ export function useTopPageLogic() {
       }
       setDeviceGuestId(currentGuestId);
       
-      fetchMySchedules(currentGuestId);
       fetchRecentEvents(currentGuestId);
 
       const handleScroll = () => setShowScrollTop(window.scrollY > 300);

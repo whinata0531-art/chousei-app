@@ -153,18 +153,9 @@ export default function ResponseTab({ logic }: Props) {
                 {group.slots.map(slot => (
                   <div
                     key={slot.id}
-                    className={`p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                      slot.is_confirmed
-                        ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-600/50'
-                        : 'bg-white dark:bg-gray-900 dark:border-gray-700'
-                    }`}
+                    className="p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-gray-900 dark:border-gray-700"
                   >
                     <div className="text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                      {slot.is_confirmed && (
-                        <span className="bg-yellow-500 dark:bg-yellow-600 text-xs px-2 py-1 rounded font-bold text-white shadow-sm">
-                          仮確定
-                        </span>
-                      )}
                       {formatSlotTime(slot.start_at, slot.end_at)}
                     </div>
                     <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg sm:w-64 shrink-0 gap-1">
