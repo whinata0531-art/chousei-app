@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Settings, CalendarDays, ArrowLeft, Trash2, Plus, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase'; // パスは適宜合わせてね！
+import { generateId, hasAnyRoutineSlot, syncRoutineToSupabase, parseRoutineFromSmartCopyRows } from '../../lib/utils';
 import GoogleLoginButton from '../components/GoogleLoginButton';
 
 type RoutineSlot = { id: string; isAllDay: boolean; start: string; end: string; status: 'maru' | 'sankaku' | 'batsu' };
@@ -76,10 +77,47 @@ export default function SettingsPage() {
  useEffect(() => {
     let currentGuestId = localStorage.getItem('deviceGuestId');
     if (!currentGuestId) {
-      currentGuestId = crypto.randomUUID();
+      currentGuestId = generateId();
       localStorage.setItem('deviceGuestId', currentGuestId);
     }
     setDeviceGuestId(currentGuestId);
+
+    // 💡 ローカルとSupabaseのシフト設定を同期する関数
+    const loadAndSyncRoutine = async (guestId: string) => {
+      let localRoutine: WeeklyRoutine | null = null;
+      const savedRoutine = localStorage.getItem('weeklyRoutine');
+      if (savedRoutine) {
+        try {
+          const parsed = JSON.parse(savedRoutine);
+          if (typeof parsed[0] !== 'string') {
+            localRoutine = parsed;
+            setRoutine(parsed);
+          }
+        } catch {}
+      }
+
+      // Supabase 側に保存されているシフトを取得
+      const { data: rows } = await supabase
+        .from('user_smart_copies')
+        .select('*')
+        .eq('guest_id', guestId)
+        .like('time_key', 'ROUTINE::%');
+
+      const remoteRoutine = rows && rows.length > 0 ? parseRoutineFromSmartCopyRows(rows) : null;
+
+      if (hasAnyRoutineSlot(localRoutine)) {
+        // ローカルに既存シフトがある場合は、まだクラウドに無ければ自動バックアップ！
+        if (!remoteRoutine) {
+          await syncRoutineToSupabase(supabase, guestId, localRoutine);
+        }
+      } else if (remoteRoutine && hasAnyRoutineSlot(remoteRoutine)) {
+        // ローカルが空（別ブラウザ・キャッシュクリア後など）でクラウドにある場合は自動復元！
+        setRoutine(remoteRoutine);
+        localStorage.setItem('weeklyRoutine', JSON.stringify(remoteRoutine));
+      }
+    };
+
+    loadAndSyncRoutine(currentGuestId);
 
     // 💡 関数をちょっと書き換え！（sessionを引数でもらうようにしたよ）
     const checkAuthAndMerge = async (session: any) => {
@@ -100,11 +138,14 @@ export default function SettingsPage() {
           await Promise.all([
             supabase.from('events').update({ host_id: session.user.id }).eq('host_id', currentGuestId),
             supabase.from('responses').update({ guest_id: session.user.id }).eq('guest_id', currentGuestId),
-            supabase.from('user_recent_events').update({ guest_id: session.user.id }).eq('guest_id', currentGuestId)
+            supabase.from('user_recent_events').update({ guest_id: session.user.id }).eq('guest_id', currentGuestId),
+            supabase.from('user_smart_copies').update({ guest_id: session.user.id }).eq('guest_id', currentGuestId),
           ]);
           
           localStorage.setItem('deviceGuestId', session.user.id);
           setDeviceGuestId(session.user.id);
+          currentGuestId = session.user.id;
+          await loadAndSyncRoutine(session.user.id);
           
           alert('🎉 過去のデータがすべてGoogleアカウントに紐付けられました！');
         }
@@ -133,16 +174,6 @@ export default function SettingsPage() {
       }
     });
 
-    const savedRoutine = localStorage.getItem('weeklyRoutine');
-    if (savedRoutine) {
-      const parsed = JSON.parse(savedRoutine);
-      if (typeof parsed[0] === 'string') {
-        setRoutine({ 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] });
-      } else {
-        setRoutine(parsed);
-      }
-    }
-
     // 💡 ③ ページを閉じる時に監視カメラをお片付け
     return () => {
       subscription.unsubscribe();
@@ -152,6 +183,10 @@ export default function SettingsPage() {
   const saveRoutine = (newRoutine: WeeklyRoutine) => {
     setRoutine(newRoutine);
     localStorage.setItem('weeklyRoutine', JSON.stringify(newRoutine));
+    const guestId = deviceGuestId || localStorage.getItem('deviceGuestId') || '';
+    if (guestId) {
+      syncRoutineToSupabase(supabase, guestId, newRoutine);
+    }
   };
 
   const isDowAllDay = (dow: number) => {
@@ -162,7 +197,7 @@ export default function SettingsPage() {
   const toggleDowAllDay = (dow: number, checked: boolean) => {
     if (checked) {
       setRoutineMemory(prev => ({ ...prev, [dow]: routine[dow] }));
-      const allDaySlot: RoutineSlot = { id: crypto.randomUUID(), isAllDay: true, start: '', end: '', status: 'maru' };
+      const allDaySlot: RoutineSlot = { id: generateId(), isAllDay: true, start: '', end: '', status: 'maru' };
       saveRoutine({ ...routine, [dow]: [allDaySlot] });
     } else {
       const mem = routineMemory[dow];
@@ -171,7 +206,7 @@ export default function SettingsPage() {
   };
 
   const addSlot = (dow: number) => {
-    const newSlot: RoutineSlot = { id: crypto.randomUUID(), isAllDay: false, start: '12:00', end: '18:00', status: 'maru' };
+    const newSlot: RoutineSlot = { id: generateId(), isAllDay: false, start: '12:00', end: '18:00', status: 'maru' };
     saveRoutine({ ...routine, [dow]: [...routine[dow], newSlot] });
   };
 

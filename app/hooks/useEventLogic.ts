@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { fetchGoogleCalendarEvents } from '../../lib/googleCalendar';
-import { getFixedDate, generateId } from '../../lib/utils';
+import { getFixedDate, generateId, hasAnyRoutineSlot, syncRoutineToSupabase, parseRoutineFromSmartCopyRows } from '../../lib/utils';
 import { Slot, Status, PastAvailability, AggregatedSlot, MatrixData, ConfirmedSchedule, RecentEvent, RoutineSlot, WeeklyRoutine } from '@/app/types';
 
 export function useEventLogic(eventId: string) {
@@ -200,9 +200,33 @@ export function useEventLogic(eventId: string) {
         if (copyPage.length < 1000) break;
         copyFrom += 1000;
       }
-      if (allCopies.length > 0) {
+
+      // 💡 固定シフト（ROUTINE::*）の自動バックアップ＆自動復元
+      const routineRows = allCopies.filter((c: any) => typeof c.time_key === 'string' && c.time_key.startsWith('ROUTINE::'));
+      const remoteRoutine = routineRows.length > 0 ? parseRoutineFromSmartCopyRows(routineRows) : null;
+      let localRoutine: any = null;
+      const savedRoutineStr = localStorage.getItem('weeklyRoutine');
+      if (savedRoutineStr) {
+        try {
+          const parsedRoutine = JSON.parse(savedRoutineStr);
+          if (typeof parsedRoutine[0] !== 'string') localRoutine = parsedRoutine;
+        } catch {}
+      }
+
+      if (hasAnyRoutineSlot(localRoutine)) {
+        if (!remoteRoutine) {
+          // 既にスマホのlocalStorageにシフトが入っている人が開いたら、裏で自動的にSupabaseへバックアップ！
+          syncRoutineToSupabase(supabase, currentGuestId, localRoutine);
+        }
+      } else if (remoteRoutine && hasAnyRoutineSlot(remoteRoutine)) {
+        // キャッシュが消えたり別ブラウザで開いた場合は、Supabaseから自動復元！
+        localStorage.setItem('weeklyRoutine', JSON.stringify(remoteRoutine));
+      }
+
+      const normalCopies = allCopies.filter((c: any) => typeof c.time_key === 'string' && !c.time_key.startsWith('ROUTINE::'));
+      if (normalCopies.length > 0) {
         const parsed: Record<string, PastAvailability> = {};
-        allCopies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
+        normalCopies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
         setPastAvailabilities(parsed);
       }
     }
@@ -673,6 +697,24 @@ export function useEventLogic(eventId: string) {
       }
       localStorage.setItem('deviceGuestId', existingUser.guest_id);
       setDeviceGuestId(existingUser.guest_id);
+
+      // 合体した過去のIDにシフトが保存されていれば復元、逆に今のブラウザにあれば過去IDへ引き継ぐ
+      const { data: mergedRoutineRows } = await supabase
+        .from('user_smart_copies')
+        .select('*')
+        .eq('guest_id', existingUser.guest_id)
+        .like('time_key', 'ROUTINE::%');
+      const mergedRemoteRoutine = mergedRoutineRows && mergedRoutineRows.length > 0 ? parseRoutineFromSmartCopyRows(mergedRoutineRows) : null;
+      const savedRoutineStr = localStorage.getItem('weeklyRoutine');
+      let currentLocalRoutine: any = null;
+      if (savedRoutineStr) {
+        try { currentLocalRoutine = JSON.parse(savedRoutineStr); } catch {}
+      }
+      if (!hasAnyRoutineSlot(currentLocalRoutine) && mergedRemoteRoutine && hasAnyRoutineSlot(mergedRemoteRoutine)) {
+        localStorage.setItem('weeklyRoutine', JSON.stringify(mergedRemoteRoutine));
+      } else if (hasAnyRoutineSlot(currentLocalRoutine) && !mergedRemoteRoutine) {
+        await syncRoutineToSupabase(supabase, existingUser.guest_id, currentLocalRoutine);
+      }
     }
 
     // --- ここから下は元の処理と同じ！（※一部 targetGuestId に変更） ---
