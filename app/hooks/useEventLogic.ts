@@ -668,7 +668,14 @@ export function useEventLogic(eventId: string) {
     const existingUser = existingUsers?.[0];
 
     // 🚀 魔改造②：使うIDを決定！（見つかれば過去のID、なければ今のブラウザのID）
+    const previousGuestId = deviceGuestId;
     const targetGuestId = existingUser ? existingUser.guest_id : deviceGuestId;
+
+    // もし別ブラウザの過去データと合体する場合、通信ヘッダー(x-guest-id)も即座に揃うよう先にlocalStorageを更新しておく
+    if (existingUser && existingUser.guest_id !== previousGuestId) {
+      localStorage.setItem('deviceGuestId', existingUser.guest_id);
+      setDeviceGuestId(existingUser.guest_id);
+    }
 
     // 🚀 魔改造③：決定したIDで上書き保存（upsert）する！
     const { data: resData, error } = await supabase
@@ -688,15 +695,12 @@ export function useEventLogic(eventId: string) {
       return;
     }
 
-    // 🚀 魔改造④：もし別ブラウザの過去データと合体した場合、今のブラウザのIDも過去のヤツに上書きしちゃう！
-    // （これで以降のスマートコピーとかも全部一人の人間として繋がる！）
-    if (existingUser && existingUser.guest_id !== deviceGuestId) {
-      if (event && event.host_id === deviceGuestId) {
+    // 🚀 魔改造④：もし別ブラウザの過去データと合体した場合、イベント作成者IDや固定シフトも引き継ぐ！
+    if (existingUser && existingUser.guest_id !== previousGuestId) {
+      if (event && event.host_id === previousGuestId) {
         await supabase.from('events').update({ host_id: existingUser.guest_id }).eq('id', eventId);
         setEvent({ ...event, host_id: existingUser.guest_id });
       }
-      localStorage.setItem('deviceGuestId', existingUser.guest_id);
-      setDeviceGuestId(existingUser.guest_id);
 
       // 合体した過去のIDにシフトが保存されていれば復元、逆に今のブラウザにあれば過去IDへ引き継ぐ
       const { data: mergedRoutineRows } = await supabase
