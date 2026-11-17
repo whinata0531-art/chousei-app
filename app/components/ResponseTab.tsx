@@ -47,7 +47,7 @@ export default function ResponseTab({ logic }: Props) {
     <>
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow px-6 pb-6 relative">
         {/* カード最上部の青いバー＋角丸＋余白（常に1つだけ上部に残り、スクロール時は名前欄などがこの下にすーっと潜り込む） */}
-        <div className="sticky top-[3.75rem] z-30 -mx-6 bg-gray-50 dark:bg-[#0a0a0a]">
+        <div className="sticky top-16 z-30 -mx-6 bg-white dark:bg-[#0a0a0a]">
           <div className="h-3 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 rounded-t-xl" />
         </div>
 
@@ -140,7 +140,7 @@ export default function ResponseTab({ logic }: Props) {
         <div className="space-y-4 mb-6">
           {groupedByDate.map(group => (
             <div key={group.dateKey} className="relative">
-              <div className="sticky top-[4.5rem] z-20 -mx-6 px-6 pt-1 pb-2.5 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between">
+              <div className="sticky top-[4.75rem] z-20 -mx-6 px-6 pt-1 pb-2.5 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between">
                 <span className="text-sm font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
                   📅 {group.label}
                 </span>
@@ -207,25 +207,31 @@ export default function ResponseTab({ logic }: Props) {
         </button>
       </div>
 
-      {/* スクロール時に画面下部に追従する送信バー（日程が多いイベントでもすぐ保存できる） */}
-      {logic.showScrollTop && (
-        <div className="fixed bottom-0 left-0 right-0 mb-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_12px_rgba(0,0,0,0.12)] z-40">
-          <div className="max-w-2xl mx-auto">
-            <button
-              onClick={logic.handleSubmit}
-              disabled={logic.submitting}
-              className="w-full py-3 px-6 bg-green-600 hover:bg-green-700 text-white font-bold text-base rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {logic.submitting ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
-              {logic.submitting ? '送信中...' : '回答を送信する'}
-            </button>
-          </div>
+      {/* スクロール時に画面下部に追従する送信バー（DOMの追加・削除によるスクロールガタつきを防ぐため常時配置して表示切替） */}
+      <div
+        aria-hidden={!logic.showScrollTop}
+        className={`fixed bottom-0 left-0 right-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_12px_rgba(0,0,0,0.12)] z-40 transition-all duration-200 ${
+          logic.showScrollTop
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 translate-y-full pointer-events-none'
+        }`}
+      >
+        <div className="max-w-2xl mx-auto">
+          <button
+            onClick={logic.handleSubmit}
+            disabled={logic.submitting}
+            tabIndex={logic.showScrollTop ? 0 : -1}
+            className="w-full py-3 px-6 bg-green-600 hover:bg-green-700 text-white font-bold text-base rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {logic.submitting ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
+            {logic.submitting ? '送信中...' : '回答を送信する'}
+          </button>
         </div>
-      )}
+      </div>
 
       {/* 📅 固定シフト未登録時のコンパクトな案内モーダル */}
       {logic.isShiftPromptOpen && (
-        <div className="fixed inset-0 mb-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border dark:border-gray-700 w-full max-w-xs p-5 text-center animate-fade-in">
             <div className="w-11 h-11 mx-auto mb-3 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center">
               <CalendarDays size={22} />

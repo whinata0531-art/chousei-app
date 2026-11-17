@@ -74,8 +74,8 @@ export function useTopPageLogic() {
       
       fetchRecentEvents(currentGuestId);
 
-      const handleScroll = () => setShowScrollTop(window.scrollY > 300);
-      window.addEventListener('scroll', handleScroll);
+      const handleScroll = () => setShowScrollTop(prev => { const next = window.scrollY > 300; return prev !== next ? next : prev; });
+      window.addEventListener('scroll', handleScroll, { passive: true });
       return () => window.removeEventListener('scroll', handleScroll);
     }
   }, []);

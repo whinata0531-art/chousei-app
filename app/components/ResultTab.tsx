@@ -171,14 +171,16 @@ export default function ResultTab({ logic }: Props) {
   return (
     <>
       <div className="space-y-6">
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow transition-all">
-          <div className="sticky top-[3.75rem] z-20 bg-white dark:bg-gray-900 border-t-4 border-t-green-500 dark:border-t-green-500 px-6 py-4 border-b border-b-gray-200 dark:border-b-gray-700 shadow-sm rounded-t-xl">
-            <button onClick={() => logic.setIsSummaryOpen(!logic.isSummaryOpen)} className="w-full flex items-center justify-between focus:outline-none">
-              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">📊 日程ごとの集計</h2>
-              <div className="p-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 transition-colors">
-                {logic.isSummaryOpen ? <ChevronDown size={20} className="text-gray-600 dark:text-gray-300" /> : <ChevronRight size={20} className="text-gray-600 dark:text-gray-300" />}
-              </div>
-            </button>
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow">
+          <div className="sticky top-16 z-20 bg-white dark:bg-[#0a0a0a]">
+            <div className="bg-white dark:bg-gray-900 border-t-4 border-t-green-500 dark:border-t-green-500 px-6 py-4 border-b border-b-gray-200 dark:border-b-gray-700 shadow-sm rounded-t-xl">
+              <button onClick={() => logic.setIsSummaryOpen(!logic.isSummaryOpen)} className="w-full flex items-center justify-between focus:outline-none">
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">📊 日程ごとの集計</h2>
+                <div className="p-1 bg-gray-100 dark:bg-gray-800 rounded-full hover:bg-gray-200 transition-colors">
+                  {logic.isSummaryOpen ? <ChevronDown size={20} className="text-gray-600 dark:text-gray-300" /> : <ChevronRight size={20} className="text-gray-600 dark:text-gray-300" />}
+                </div>
+              </button>
+            </div>
           </div>
 
           {logic.isSummaryOpen && (
@@ -273,11 +275,11 @@ export default function ResultTab({ logic }: Props) {
                   <div
                     key={slot.id}
                     onClick={isShareSelectMode ? () => toggleSelectSlot(slot.id) : undefined}
-                    className={`p-4 border rounded-xl flex flex-col gap-2 transition-all ${
+                    className={`p-4 border rounded-xl flex flex-col gap-2 transition-colors ${
                       isShareSelectMode ? 'cursor-pointer select-none' : ''
                     } ${
                       isShareSelectMode && isSelected
-                        ? 'ring-4 ring-blue-500 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30 transform scale-[1.01]'
+                        ? 'ring-4 ring-blue-500 border-blue-500 bg-blue-50/60 dark:bg-blue-900/30'
                         : highlightClass
                     }`}
                   >
@@ -385,9 +387,9 @@ export default function ResultTab({ logic }: Props) {
         </div>
       </div>
 
-      {/* 📤 日程選択モード中の画面下部固定バー（mb-0で親のspace-yによる余白浮きを完全に防止） */}
+      {/* 📤 日程選択モード中の画面下部固定バー */}
       {isShareSelectMode && (
-        <div className="fixed bottom-0 left-0 right-0 mb-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t-2 border-blue-500 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] z-40">
+        <div className="fixed bottom-0 left-0 right-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t-2 border-blue-500 shadow-[0_-4px_12px_rgba(0,0,0,0.15)] z-40">
           <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
             <button
               onClick={() => {
@@ -416,7 +418,7 @@ export default function ResultTab({ logic }: Props) {
 
       {/* 📤 共有・コピー用モーダル */}
       {isShareModalOpen && (
-        <div className="fixed inset-0 mb-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border dark:border-gray-700 w-full max-w-lg overflow-hidden animate-fade-in">
             <div className="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20">
               <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">

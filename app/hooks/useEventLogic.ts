@@ -252,8 +252,8 @@ export function useEventLogic(eventId: string) {
 
     fetchAll(); // 外に出した関数を呼ぶだけ！
 
-    const handleScroll = () => setShowScrollTop(window.scrollY > 300);
-    window.addEventListener('scroll', handleScroll);
+    const handleScroll = () => setShowScrollTop(prev => { const next = window.scrollY > 300; return prev !== next ? next : prev; });
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [eventId]);
 
