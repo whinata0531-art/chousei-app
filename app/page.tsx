@@ -41,7 +41,7 @@ export default function TopPage() {
   }
   
   return (
-    <div className="max-w-xl mx-auto p-4 mt-6 pb-20 [overflow-anchor:none]">
+    <div className="max-w-xl mx-auto p-4 mt-6 pb-28 [overflow-anchor:none]">
       <div className="flex justify-between items-center px-1 mb-6">
         <h1 className="text-2xl font-extrabold text-gray-800 dark:text-gray-100 tracking-tight">📝 最強調整</h1>
         <div className="flex items-center gap-2">
@@ -67,7 +67,7 @@ export default function TopPage() {
         onClick={logic.scrollToTop}
         aria-hidden={!logic.showScrollTop}
         tabIndex={logic.showScrollTop ? 0 : -1}
-        className={`fixed bottom-6 right-6 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all duration-200 z-50 ${
+        className={`fixed bottom-24 right-6 p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg transition-all duration-200 z-40 ${
           logic.showScrollTop
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-4 pointer-events-none'

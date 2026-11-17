@@ -22,6 +22,7 @@
 html,
 body {
   overflow-anchor: none;
+  overscroll-behavior-y: contain;
 }
 
 body {

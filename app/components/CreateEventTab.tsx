@@ -1,4 +1,5 @@
 // app/components/CreateEventTab.tsx
+import { useState } from 'react';
 import { format, isSameDay, subMonths, addMonths } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { CalendarDays, History, Calendar as CalendarIcon, ChevronLeft, ChevronRight, ChevronDown, Trash2, Plus, X, CheckCircle2 } from 'lucide-react';
@@ -7,13 +8,45 @@ import { useTopPageLogic } from '@/app/hooks/useTopPageLogic';
 type Props = { logic: ReturnType<typeof useTopPageLogic> };
 
 export default function CreateEventTab({ logic }: Props) {
+  const [isTitleModalOpen, setIsTitleModalOpen] = useState(false);
+  const [tempTitle, setTempTitle] = useState('');
+
+  // イベント名が空のときはその場で入力モーダルを開き、入力済みなら作成を実行
+  const handleCreateOrOpenModal = () => {
+    if (!logic.title.trim()) {
+      setTempTitle(logic.title);
+      setIsTitleModalOpen(true);
+      return;
+    }
+    logic.handleCreate();
+  };
+
+  const handleConfirmTitleModal = () => {
+    logic.setTitle(tempTitle.trim());
+    setIsTitleModalOpen(false);
+  };
+
+  const isDisabled = logic.loading || (Boolean(logic.title.trim()) && logic.totalSlotsCount === 0);
+  const buttonLabel = logic.loading
+    ? '作成中...'
+    : !logic.title.trim()
+    ? 'イベント名を入力してね'
+    : 'イベントを作成する';
+  const isReady = Boolean(logic.title.trim()) && logic.totalSlotsCount > 0;
+
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6 border-t-4 border-blue-500">
-      <div className="space-y-6">
+    <>
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md px-6 pb-6 relative">
+        {/* カード最上部の青いバー＋角丸＋余白（常に1つだけ上部に残り、スクロール時は下の要素がこの下にすーっと潜り込む） */}
+        <div className="sticky top-0 z-30 -mx-6 bg-white dark:bg-[#0a0a0a]">
+          <div className="h-3 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 rounded-t-xl" />
+        </div>
+
+        <div className="space-y-6 pt-3">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold mb-1 dark:text-gray-300">イベント名 *</label>
-            <input type="text" value={logic.title} onChange={e => logic.setTitle(e.target.value)} className="w-full p-2 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例: BNS合同練習" />
+            <label className="block text-base font-extrabold text-gray-800 dark:text-gray-100 mb-1.5">イベント名 *</label>
+            <input type="text" value={logic.title} onChange={e => logic.setTitle(e.target.value)} className="w-full p-2.5 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例: BNS合同練習" />
           </div>
           <div>
             <label className="block text-sm font-bold mb-1 dark:text-gray-300">メモ（任意）</label>
@@ -77,19 +110,14 @@ export default function CreateEventTab({ logic }: Props) {
           )}
         </div>
 
-        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-200 dark:border-green-800/30 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="text-green-800 dark:text-green-400 font-bold">
-            有効な候補日程: <span className="text-xl">{logic.totalSlotsCount}</span> 枠
-          </div>
-          <button onClick={logic.handleCreate} disabled={logic.loading || logic.totalSlotsCount === 0 || !logic.title} className={`w-full sm:w-auto px-8 py-3 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 ${logic.totalSlotsCount > 0 && logic.title ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>
-            <CheckCircle2 size={20} />
-            {logic.loading ? '作成中...' : 'イベントを作成する'}
-          </button>
-        </div>
-
         <div>
-          <div className="flex justify-between items-end mb-4 border-b dark:border-gray-700 pb-2">
-            <h3 className="font-bold text-lg dark:text-gray-100">個別の日程調整</h3>
+          <div className="sticky top-3 z-20 -mx-6 px-6 pt-1 pb-2.5 mb-4 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-lg dark:text-gray-100">個別の日程調整</h3>
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+                {logic.totalSlotsCount}枠
+              </span>
+            </div>
             {logic.hostHistory.length > 0 && (
               <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
                 <History size={14} />
@@ -201,7 +229,75 @@ export default function CreateEventTab({ logic }: Props) {
             </div>
           )}
         </div>
+        </div>
       </div>
-    </div>
+
+      {/* 画面下部に常時表示される作成バー（上を調整中でも迷子にならない） */}
+      <div className="fixed bottom-0 left-0 right-0 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 shadow-[0_-4px_12px_rgba(0,0,0,0.12)] z-40">
+        <div className="max-w-xl mx-auto">
+          <button
+            onClick={handleCreateOrOpenModal}
+            disabled={isDisabled}
+            className={`w-full py-3 px-6 font-bold text-base rounded-xl shadow-md transition-all flex items-center justify-center gap-2 ${
+              isReady
+                ? 'bg-green-600 hover:bg-green-700 text-white'
+                : !logic.title.trim()
+                ? 'bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                : 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            <CheckCircle2 size={20} />
+            {buttonLabel}
+          </button>
+        </div>
+      </div>
+
+      {/* その場でイベント名を入力できるポップアップモーダル */}
+      {isTitleModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-start justify-center pt-24 sm:items-center sm:pt-4 p-4"
+          onClick={() => setIsTitleModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border dark:border-gray-700 w-full max-w-sm p-5 animate-fade-in"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-base font-extrabold text-gray-800 dark:text-gray-100 mb-3">
+              イベント名を入力
+            </h3>
+            <input
+              type="text"
+              autoFocus
+              value={tempTitle}
+              onChange={e => setTempTitle(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && tempTitle.trim()) {
+                  handleConfirmTitleModal();
+                }
+              }}
+              className="w-full p-3 border dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none mb-4"
+              placeholder="例: BNS合同練習"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsTitleModalOpen(false)}
+                className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmTitleModal}
+                disabled={!tempTitle.trim()}
+                className="flex-1 py-2.5 px-3 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
