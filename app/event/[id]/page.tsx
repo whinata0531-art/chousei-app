@@ -89,16 +89,21 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         </Link>
       </div>
 
-      {/* 〜〜 タブ切り替えボタン（2タブ構成で広々＆押しやすく！高さ4rem=64pxで直下のカード上端と隙間ゼロで連動） 〜〜 */}
-      <div className="sticky top-0 z-30 bg-white dark:bg-[#0a0a0a] pt-2 pb-3 -mx-4 px-4">
-        <div className="flex h-11 bg-gray-200 dark:bg-gray-800 rounded-lg p-1 shadow-sm">
-          <button onClick={() => logic.setActiveTab('response')} className={`flex-1 text-sm font-bold rounded-md transition-all ${logic.activeTab === 'response' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}>
-            📝 回答
-          </button>
-          <button onClick={() => logic.setActiveTab('result')} className={`flex-1 text-sm font-bold rounded-md transition-all ${logic.activeTab === 'result' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}>
-            📊 集計
-          </button>
+      {/* 〜〜 タブ切り替えボタン（回答タブ時は下端の青いバーも同一sticky内に統合し、別階層のsticky干渉を防ぐ） 〜〜 */}
+      <div className="sticky top-0 z-30 bg-white dark:bg-[#0a0a0a] pt-2 -mx-4 px-4 will-change-transform">
+        <div className="pb-3">
+          <div className="flex h-11 bg-gray-200 dark:bg-gray-800 rounded-lg p-1 shadow-sm">
+            <button onClick={() => logic.setActiveTab('response')} className={`flex-1 text-sm font-bold rounded-md transition-all ${logic.activeTab === 'response' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}>
+              📝 回答
+            </button>
+            <button onClick={() => logic.setActiveTab('result')} className={`flex-1 text-sm font-bold rounded-md transition-all ${logic.activeTab === 'result' ? 'bg-white dark:bg-gray-700 shadow text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}>
+              📊 集計
+            </button>
+          </div>
         </div>
+        {logic.activeTab === 'response' && (
+          <div className="h-3 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 rounded-t-xl pointer-events-none" />
+        )}
       </div>
 
       {/* 💡 各タブの中身を呼び出す */}

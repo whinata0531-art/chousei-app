@@ -45,14 +45,9 @@ export default function ResponseTab({ logic }: Props) {
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow px-6 pb-6 relative">
-        {/* カード最上部の青いバー＋角丸＋余白（常に1つだけ上部に残り、スクロール時は名前欄などがこの下にすーっと潜り込む） */}
-        <div className="sticky top-16 z-30 -mx-6 bg-white dark:bg-[#0a0a0a]">
-          <div className="h-3 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 rounded-t-xl" />
-        </div>
-
+      <div className="bg-white dark:bg-gray-900 rounded-b-xl shadow px-6 pb-6 relative">
         <div className="mb-4 pt-3">
-          <label className="block text-sm font-bold mb-1 dark:text-gray-300">お名前 *</label>
+          <label className="block text-base font-extrabold text-gray-800 dark:text-gray-100 mb-1.5">お名前 *</label>
           <input
             type="text"
             value={logic.guestName}
@@ -140,7 +135,7 @@ export default function ResponseTab({ logic }: Props) {
         <div className="space-y-4 mb-6">
           {groupedByDate.map(group => (
             <div key={group.dateKey} className="relative">
-              <div className="sticky top-[4.75rem] z-20 -mx-6 px-6 pt-1 pb-2.5 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between">
+              <div className="sticky top-[4.75rem] z-20 -mx-6 px-6 pt-1 pb-2.5 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between pointer-events-none will-change-transform">
                 <span className="text-sm font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
                   📅 {group.label}
                 </span>

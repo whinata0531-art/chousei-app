@@ -74,9 +74,17 @@ export function useTopPageLogic() {
       
       fetchRecentEvents(currentGuestId);
 
-      const handleScroll = () => setShowScrollTop(prev => { const next = window.scrollY > 300; return prev !== next ? next : prev; });
-      window.addEventListener('scroll', handleScroll, { passive: true });
-      return () => window.removeEventListener('scroll', handleScroll);
+      const scrollContainer = document.getElementById('app-scroll-container');
+      if (scrollContainer) scrollContainer.scrollTop = 0;
+
+      const handleScroll = () => setShowScrollTop(prev => {
+        const y = scrollContainer ? scrollContainer.scrollTop : window.scrollY;
+        const next = y > 300;
+        return prev !== next ? next : prev;
+      });
+      const target: HTMLElement | Window = scrollContainer || window;
+      target.addEventListener('scroll', handleScroll, { passive: true });
+      return () => target.removeEventListener('scroll', handleScroll);
     }
   }, []);
 
@@ -354,7 +362,11 @@ export function useTopPageLogic() {
     } else { alert('URLをコピーしてね！'); }
   };
 
-  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  const scrollToTop = () => {
+    const scrollContainer = document.getElementById('app-scroll-container');
+    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // UI描画用の計算値
   const calendarDays = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });

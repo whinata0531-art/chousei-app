@@ -21,8 +21,9 @@
 
 html,
 body {
-  overflow-anchor: none;
-  overscroll-behavior-y: contain;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {

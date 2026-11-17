@@ -252,9 +252,17 @@ export function useEventLogic(eventId: string) {
 
     fetchAll(); // 外に出した関数を呼ぶだけ！
 
-    const handleScroll = () => setShowScrollTop(prev => { const next = window.scrollY > 300; return prev !== next ? next : prev; });
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    const scrollContainer = document.getElementById('app-scroll-container');
+    if (scrollContainer) scrollContainer.scrollTop = 0;
+
+    const handleScroll = () => setShowScrollTop(prev => {
+      const y = scrollContainer ? scrollContainer.scrollTop : window.scrollY;
+      const next = y > 300;
+      return prev !== next ? next : prev;
+    });
+    const target: HTMLElement | Window = scrollContainer || window;
+    target.addEventListener('scroll', handleScroll, { passive: true });
+    return () => target.removeEventListener('scroll', handleScroll);
   }, [eventId]);
 
   const fetchRecentEvents = async (guestId: string) => {
@@ -734,7 +742,9 @@ export function useEventLogic(eventId: string) {
     await fetchStats(slots);
     setSubmitting(false);
     setActiveTab('result');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const scrollContainer = document.getElementById('app-scroll-container');
+    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast('回答を保存しました！🎉', 'success');
   };
 
@@ -745,7 +755,11 @@ export function useEventLogic(eventId: string) {
     window.location.href = '/'; 
   };
 
-  const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  const scrollToTop = () => {
+    const scrollContainer = document.getElementById('app-scroll-container');
+    if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const sortedAndFilteredSlots = useMemo(() => {
     let result = [...aggregated];

@@ -31,10 +31,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* 💡 2. bodyの一番上にポンッと置く！ */}
-        <InAppBrowserWarning />
-        
-        {children}
+        <div
+          id="app-scroll-container"
+          className="h-[100dvh] w-full overflow-y-auto overscroll-y-contain [overflow-anchor:none]"
+        >
+          {/* 💡 2. bodyの一番上にポンッと置く！ */}
+          <InAppBrowserWarning />
+          
+          {children}
+        </div>
         <Analytics />
       </body>
     </html>
