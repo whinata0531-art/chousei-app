@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { format } from 'date-fns';
 import { supabase } from '../../lib/supabase';
 import { fetchGoogleCalendarEvents } from '../../lib/googleCalendar';
 import { getFixedDate, generateId, hasAnyRoutineSlot, syncRoutineToSupabase, parseRoutineFromSmartCopyRows } from '../../lib/utils';
@@ -166,8 +167,12 @@ export function useEventLogic(eventId: string) {
     
     if (sData) {
       setSlots(sData);
+      const nowMs = Date.now();
       const initialAnswers: Record<string, Status> = {};
-      sData.forEach(s => initialAnswers[s.id] = 'maru'); 
+      // 💡 すでに終了日時を過ぎている不可能な枠は最初から自動で「❌」にし、現在以降の枠を「⭕️」にする
+      sData.forEach(s => {
+        initialAnswers[s.id] = getFixedDate(s.end_at).getTime() < nowMs ? 'batsu' : 'maru';
+      });
 
       const { data: existingResponses } = await supabase.from('responses').select('id, guest_name').eq('event_id', eventId).eq('guest_id', currentGuestId).order('updated_at', { ascending: false }).limit(1);
       const existingResponse = existingResponses?.[0];
@@ -186,6 +191,8 @@ export function useEventLogic(eventId: string) {
         setAnswers(loadedAnswers);
       }
 
+      // 💡 高速化：過ぎ去った過去の日付データは読み込まず、「固定シフト(ROUTINE::*)」と「今日以降のスマートコピー」だけを取得！
+      const todayDateStr = format(new Date(), 'yyyy-MM-dd');
       let allCopies: any[] = [];
       let copyFrom = 0;
       while (true) {
@@ -193,6 +200,7 @@ export function useEventLogic(eventId: string) {
           .from('user_smart_copies')
           .select('*')
           .eq('guest_id', currentGuestId)
+          .or(`time_key.like.ROUTINE::%,time_key.gte.${todayDateStr}`)
           .order('time_key')
           .range(copyFrom, copyFrom + 999);
         if (copyErr || !copyPage || copyPage.length === 0) break;
@@ -223,12 +231,16 @@ export function useEventLogic(eventId: string) {
         localStorage.setItem('weeklyRoutine', JSON.stringify(remoteRoutine));
       }
 
+      // 現在時刻以降に終了する予定のみをスマートコピー対象として保持
       const normalCopies = allCopies.filter((c: any) => typeof c.time_key === 'string' && !c.time_key.startsWith('ROUTINE::'));
-      if (normalCopies.length > 0) {
-        const parsed: Record<string, PastAvailability> = {};
-        normalCopies.forEach((c: any) => parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at });
-        setPastAvailabilities(parsed);
-      }
+      const parsed: Record<string, PastAvailability> = {};
+      normalCopies.forEach((c: any) => {
+        const parts = c.time_key.split('_');
+        if (parts.length >= 2 && getFixedDate(parts[1]).getTime() >= nowMs) {
+          parsed[c.time_key] = { status: c.status as Status, updated: c.updated_at };
+        }
+      });
+      setPastAvailabilities(parsed);
     }
 
     if (sData) await fetchStats(sData);
@@ -499,16 +511,24 @@ export function useEventLogic(eventId: string) {
       return;
     }
     const newAnswers = { ...answers };
+    const nowMs = Date.now();
     let appliedCount = 0;
 
     slots.forEach(slot => {
       const slotDate = getFixedDate(slot.start_at);
+      const sStart = slotDate.getTime();
+      const sEnd = getFixedDate(slot.end_at).getTime();
+
+      // すでに終了した過去の枠は自動的に ❌ にする
+      if (sEnd < nowMs) {
+        newAnswers[slot.id] = 'batsu';
+        return;
+      }
+
       const dow = slotDate.getDay();
       const rSlots = routine[dow] || [];
       if (rSlots.length === 0) return;
 
-      const sStart = slotDate.getTime();
-      const sEnd = getFixedDate(slot.end_at).getTime();
       const baseDateStr = slot.start_at.substring(0, 10); 
 
       const overlaps: { start: number; end: number; status: Status }[] = [];
@@ -543,11 +563,18 @@ export function useEventLogic(eventId: string) {
 
   const applySmartCopy = () => {
     const newAnswers = { ...answers };
+    const nowMs = Date.now();
     let appliedCount = 0;
 
     slots.forEach(slot => {
       const sStart = getFixedDate(slot.start_at).getTime();
       const sEnd = getFixedDate(slot.end_at).getTime();
+
+      // すでに過ぎた不可能な枠はすべて ❌ にし、現在以降の予定のみスマートコピーする
+      if (sEnd < nowMs) {
+        newAnswers[slot.id] = 'batsu';
+        return;
+      }
 
       const overlaps: { start: number; end: number; status: Status; updated: number }[] = [];
       Object.entries(pastAvailabilities).forEach(([key, past]) => {
@@ -735,8 +762,20 @@ export function useEventLogic(eventId: string) {
     await supabase.from('availabilities').insert(avails);
 
     const now = Date.now();
-    const copyUpserts = slots.map(slot => ({ guest_id: targetGuestId, time_key: `${slot.start_at}_${slot.end_at}`, status: answers[slot.id], updated_at: now }));
-    await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
+    const todayDateStr = format(new Date(), 'yyyy-MM-dd');
+    // 💡 現在以降の予定だけをスマートコピー用に保存し、昨日以前の古い不要なコピーデータは自動整理する
+    const copyUpserts = slots
+      .filter(slot => getFixedDate(slot.end_at).getTime() >= now)
+      .map(slot => ({ guest_id: targetGuestId, time_key: `${slot.start_at}_${slot.end_at}`, status: answers[slot.id], updated_at: now }));
+    if (copyUpserts.length > 0) {
+      await supabase.from('user_smart_copies').upsert(copyUpserts, { onConflict: 'guest_id,time_key' });
+    }
+    await supabase
+      .from('user_smart_copies')
+      .delete()
+      .eq('guest_id', targetGuestId)
+      .lt('time_key', todayDateStr)
+      .not('time_key', 'like', 'ROUTINE::%');
 
     localStorage.setItem('lastGuestName', guestName);
     await fetchStats(slots);

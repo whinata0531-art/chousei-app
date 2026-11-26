@@ -175,6 +175,13 @@ export function useTopPageLogic() {
     setDayBlocks(dayBlocks.filter(b => b.id !== blockId));
   };
 
+  const clearAllDayBlocks = () => {
+    if (dayBlocks.length === 0) return;
+    if (!confirm('追加した日程をすべてクリアしますか？')) return;
+    setDayBlocks([]);
+    setDayMemory({});
+  };
+
   const updateDayBlockDate = (blockId: string, newDate: string) => {
     setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, date: newDate } : b).sort((a, b) => a.date.localeCompare(b.date)));
   };
@@ -382,7 +389,7 @@ export function useTopPageLogic() {
     selectedDows, bulkStart, setBulkStart, bulkEnd, setBulkEnd, bulkInterval, setBulkInterval,
     bulkIsAllDay, setBulkIsAllDay, showScrollTop, DOW_LABELS,
     calendarDays, paddingDays, totalSlotsCount,
-    removeRecentEvent, addDayBlock, removeDayBlock, updateDayBlockDate,
+    removeRecentEvent, addDayBlock, removeDayBlock, clearAllDayBlocks, updateDayBlockDate,
     toggleDayExpanded, toggleDayAllDay, addTimeSlot, removeTimeSlot, updateTimeSlot,
     toggleCalendarDate, loadFromHistory, toggleDow, toggleEveryday, generateBulkSlots,
     handleCreate, handleShare, scrollToTop

@@ -13,6 +13,22 @@ type Props = { logic: ReturnType<typeof useEventLogic> };
 export default function ResponseTab({ logic }: Props) {
   const router = useRouter();
   const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [selectedBulkDows, setSelectedBulkDows] = useState<number[]>([]);
+
+  const DOW_ITEMS = [
+    { label: '日', val: 0 },
+    { label: '月', val: 1 },
+    { label: '火', val: 2 },
+    { label: '水', val: 3 },
+    { label: '木', val: 4 },
+    { label: '金', val: 5 },
+    { label: '土', val: 6 },
+  ];
+
+  // このイベントに存在する曜日だけを判定（存在しない曜日は薄く表示）
+  const availableDows = new Set(logic.slots.map(s => getFixedDate(s.start_at).getDay()));
+  const nowMs = Date.now();
+  const hasFutureSlots = logic.slots.some(s => getFixedDate(s.end_at).getTime() >= nowMs);
 
   // 日付ごとに候補枠をグループ化（日付見出しをセクションごとにSticky固定するため）
   const groupedByDate: { dateKey: string; label: string; slots: Slot[] }[] = [];
@@ -23,7 +39,7 @@ export default function ResponseTab({ logic }: Props) {
     if (!lastGroup || lastGroup.dateKey !== dateKey) {
       groupedByDate.push({
         dateKey,
-        label: format(d, 'yyyy年M月d日 (E)', { locale: ja }),
+        label: format(d, 'yyyy/M/d (E)', { locale: ja }),
         slots: [slot],
       });
     } else {
@@ -31,16 +47,62 @@ export default function ResponseTab({ logic }: Props) {
     }
   });
 
-  // 全枠一括変更
+  // 全枠一括変更（未来枠があるイベントで⭕️/🔺にする際、すでに終了した過去枠は❌のまま維持）
   const handleBulkSetAll = (status: Status) => {
     const next: Record<string, Status> = {};
+    const currentNow = Date.now();
     logic.slots.forEach(s => {
+      if (status !== 'batsu' && hasFutureSlots && getFixedDate(s.end_at).getTime() < currentNow) {
+        next[s.id] = 'batsu';
+      } else {
+        next[s.id] = status;
+      }
+    });
+    logic.setAnswers(next);
+    const label = status === 'maru' ? '⭕️' : status === 'sankaku' ? '🔺' : '❌';
+    logic.showToast(`すべての枠を「${label}」に変更しました`, 'info');
+  };
+
+  // 曜日選択トグル
+  const toggleBulkDow = (dow: number) => {
+    setSelectedBulkDows(prev =>
+      prev.includes(dow) ? prev.filter(d => d !== dow) : [...prev, dow]
+    );
+  };
+
+  // 選択した曜日を一括変更
+  const handleBulkSetByDows = (status: Status) => {
+    if (selectedBulkDows.length === 0) {
+      logic.showToast('変更したい曜日をタップして選んでね！', 'info');
+      return;
+    }
+    const next = { ...logic.answers };
+    const currentNow = Date.now();
+    let count = 0;
+    logic.slots.forEach(s => {
+      const dow = getFixedDate(s.start_at).getDay();
+      if (selectedBulkDows.includes(dow)) {
+        if (status !== 'batsu' && hasFutureSlots && getFixedDate(s.end_at).getTime() < currentNow) {
+          next[s.id] = 'batsu';
+        } else {
+          next[s.id] = status;
+          count++;
+        }
+      }
+    });
+    logic.setAnswers(next);
+    const dowText = DOW_ITEMS.filter(d => selectedBulkDows.includes(d.val)).map(d => d.label).join('・');
+    const label = status === 'maru' ? '⭕️' : status === 'sankaku' ? '🔺' : '❌';
+    logic.showToast(`${dowText}曜日の枠（${count}件）を「${label}」に変更しました`, 'info');
+  };
+
+  // 特定の1日分をまとめて変更
+  const handleSetDateGroup = (groupSlots: Slot[], status: Status) => {
+    const next = { ...logic.answers };
+    groupSlots.forEach(s => {
       next[s.id] = status;
     });
     logic.setAnswers(next);
-    setIsBulkOpen(false);
-    const label = status === 'maru' ? '⭕️' : status === 'sankaku' ? '🔺' : '❌';
-    logic.showToast(`すべての枠を「${label}」に変更しました`, 'info');
   };
 
   return (
@@ -105,43 +167,145 @@ export default function ResponseTab({ logic }: Props) {
           </div>
 
           {isBulkOpen && (
-            <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800/80 rounded-lg border border-gray-200 dark:border-gray-700 grid grid-cols-3 gap-2 animate-fade-in">
-              <button
-                type="button"
-                onClick={() => handleBulkSetAll('maru')}
-                className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-green-50 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-700 rounded-md shadow-xs transition whitespace-nowrap"
-              >
-                すべて ⭕️
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBulkSetAll('sankaku')}
-                className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-orange-50 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-700 rounded-md shadow-xs transition whitespace-nowrap"
-              >
-                すべて 🔺
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBulkSetAll('batsu')}
-                className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-red-50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700 rounded-md shadow-xs transition whitespace-nowrap"
-              >
-                すべて ❌
-              </button>
+            <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3 animate-fade-in">
+              <div>
+                <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-1.5">すべての枠をまとめて変更</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBulkSetAll('maru')}
+                    className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-green-50 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-700 rounded-md shadow-xs transition whitespace-nowrap"
+                  >
+                    すべて ⭕️
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkSetAll('sankaku')}
+                    className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-orange-50 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-700 rounded-md shadow-xs transition whitespace-nowrap"
+                  >
+                    すべて 🔺
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkSetAll('batsu')}
+                    className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-red-50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700 rounded-md shadow-xs transition whitespace-nowrap"
+                  >
+                    すべて ❌
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2.5 border-t border-gray-200 dark:border-gray-700">
+                <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-2">曜日を選んでまとめて変更</p>
+                <div className="grid grid-cols-7 gap-1.5 mb-2">
+                  {DOW_ITEMS.map(dow => {
+                    const exists = availableDows.has(dow.val);
+                    const selected = selectedBulkDows.includes(dow.val);
+                    return (
+                      <button
+                        key={dow.val}
+                        type="button"
+                        disabled={!exists}
+                        onClick={() => toggleBulkDow(dow.val)}
+                        className={`py-1.5 rounded-lg text-xs font-bold border transition ${
+                          !exists
+                            ? 'bg-gray-100 dark:bg-gray-900 text-gray-300 dark:text-gray-600 border-gray-200 dark:border-gray-800 cursor-not-allowed'
+                            : selected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-blue-50'
+                        }`}
+                      >
+                        {dow.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    disabled={selectedBulkDows.length === 0}
+                    onClick={() => handleBulkSetByDows('maru')}
+                    className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-green-50 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-700 rounded-md shadow-xs transition disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    選択曜日 ⭕️
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedBulkDows.length === 0}
+                    onClick={() => handleBulkSetByDows('sankaku')}
+                    className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-orange-50 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-700 rounded-md shadow-xs transition disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    選択曜日 🔺
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selectedBulkDows.length === 0}
+                    onClick={() => handleBulkSetByDows('batsu')}
+                    className="py-1.5 px-2 text-xs font-bold bg-white dark:bg-gray-800 hover:bg-red-50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700 rounded-md shadow-xs transition disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    選択曜日 ❌
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
 
         {/* 日付ごとのグループ（普段はシンプルな日付バーで、スクロール時に上部の青いバーの下にピタッと合体する） */}
         <div className="space-y-4 mb-6">
-          {groupedByDate.map(group => (
+          {groupedByDate.map(group => {
+            const allMaru = group.slots.every(s => logic.answers[s.id] === 'maru');
+            const allSankaku = group.slots.every(s => logic.answers[s.id] === 'sankaku');
+            const allBatsu = group.slots.every(s => logic.answers[s.id] === 'batsu');
+            return (
             <div key={group.dateKey} className="relative">
-              <div className="sticky top-[4.75rem] z-20 -mx-6 px-6 pt-1 pb-2.5 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between pointer-events-none will-change-transform">
-                <span className="text-sm font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
-                  📅 {group.label}
-                </span>
-                <span className="text-[11px] font-bold text-gray-400 dark:text-gray-500">
-                  {group.slots.length}枠
-                </span>
+              <div className="sticky top-[4.75rem] z-20 -mx-6 px-6 pt-1.5 pb-2 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between gap-2 pointer-events-none will-change-transform">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-bold text-blue-700 dark:text-blue-400 whitespace-nowrap">
+                    📅 {group.label}
+                  </span>
+                  <span className="text-[11px] font-bold text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                    ({group.slots.length})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 p-0.5 rounded-md shrink-0 pointer-events-auto">
+                  <button
+                    type="button"
+                    title="この日をすべて⭕️にする"
+                    onClick={() => handleSetDateGroup(group.slots, 'maru')}
+                    className={`px-2 py-0.5 text-xs rounded transition ${
+                      allMaru
+                        ? 'bg-white dark:bg-gray-700 shadow-xs border border-green-300 dark:border-green-600'
+                        : 'opacity-45 hover:opacity-80'
+                    }`}
+                  >
+                    ⭕️
+                  </button>
+                  <button
+                    type="button"
+                    title="この日をすべて🔺にする"
+                    onClick={() => handleSetDateGroup(group.slots, 'sankaku')}
+                    className={`px-2 py-0.5 text-xs rounded transition ${
+                      allSankaku
+                        ? 'bg-white dark:bg-gray-700 shadow-xs border border-orange-300 dark:border-orange-600'
+                        : 'opacity-45 hover:opacity-80'
+                    }`}
+                  >
+                    🔺
+                  </button>
+                  <button
+                    type="button"
+                    title="この日をすべて❌にする"
+                    onClick={() => handleSetDateGroup(group.slots, 'batsu')}
+                    className={`px-2 py-0.5 text-xs rounded transition ${
+                      allBatsu
+                        ? 'bg-white dark:bg-gray-700 shadow-xs border border-red-300 dark:border-red-600'
+                        : 'opacity-45 hover:opacity-80'
+                    }`}
+                  >
+                    ❌
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2.5 pt-2.5">
@@ -189,7 +353,8 @@ export default function ResponseTab({ logic }: Props) {
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <button

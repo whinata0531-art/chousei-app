@@ -101,6 +101,13 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
     setDayBlocks(dayBlocks.filter(b => b.id !== blockId));
   };
 
+  const clearAllDayBlocks = () => {
+    if (dayBlocks.length === 0) return;
+    if (!confirm('表示中の日程を一旦すべてクリアしますか？\n（※クリア後に同じ日時の枠を追加し直せば、既存の回答データは消えずに引き継がれます）')) return;
+    setDayBlocks([]);
+    setDayMemory({});
+  };
+
   const updateDayBlockDate = (blockId: string, newDate: string) => {
     setDayBlocks(dayBlocks.map(b => b.id === blockId ? { ...b, date: newDate } : b).sort((a, b) => a.date.localeCompare(b.date)));
   };
@@ -289,9 +296,24 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-6">
-        <div className="flex items-center gap-2 mb-6 border-b dark:border-gray-700 pb-2 text-blue-600 dark:text-blue-400">
-          <CalendarDays size={20} />
-          <h2 className="text-lg font-bold">日程の編集</h2>
+        <div className="flex items-center justify-between gap-2 mb-6 border-b dark:border-gray-700 pb-2">
+          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+            <CalendarDays size={20} />
+            <h2 className="text-lg font-bold">日程の編集</h2>
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+              {totalSlotsCount}枠
+            </span>
+          </div>
+          {dayBlocks.length > 0 && (
+            <button
+              type="button"
+              onClick={clearAllDayBlocks}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/50 rounded-md transition whitespace-nowrap"
+            >
+              <Trash2 size={14} />
+              <span>全クリア</span>
+            </button>
+          )}
         </div>
 
         <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800/30 overflow-hidden shadow-sm transition-all">
@@ -441,6 +463,16 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
             </div>
           ))}
         </div>
+
+        {dayBlocks.length === 0 && (
+          <div className="mt-4 text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+            <p className="text-gray-500 dark:text-gray-400 font-bold mb-1">日付がありません</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">上の「期間と曜日で一括追加」やカレンダーから日程を追加してね</p>
+            <button type="button" onClick={() => addDayBlock()} className="px-4 py-2 bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-lg shadow-sm border dark:border-gray-600">
+              今日を追加する
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-t dark:border-gray-700 z-50 flex justify-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">

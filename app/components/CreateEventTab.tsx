@@ -111,22 +111,34 @@ export default function CreateEventTab({ logic }: Props) {
         </div>
 
         <div>
-          <div className="sticky top-3 z-20 -mx-6 px-6 pt-1 pb-2.5 mb-4 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-lg dark:text-gray-100">個別の日程調整</h3>
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+          <div className="sticky top-3 z-20 -mx-6 px-6 pt-1 pb-2.5 mb-4 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex justify-between items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="font-bold text-base sm:text-lg dark:text-gray-100 whitespace-nowrap">個別の日程調整</h3>
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full whitespace-nowrap">
                 {logic.totalSlotsCount}枠
               </span>
             </div>
-            {logic.hostHistory.length > 0 && (
-              <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
-                <History size={14} />
-                <select onChange={(e) => { logic.loadFromHistory(e.target.value); e.target.value = ""; }} className="bg-purple-50 dark:bg-purple-900/30 border dark:border-purple-800/50 rounded p-1 max-w-[150px] outline-none">
-                  <option value="">履歴からコピー</option>
-                  {logic.hostHistory.map((h, i) => <option key={i} value={i}>{h.title}</option>)}
-                </select>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {logic.hostHistory.length > 0 && (
+                <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
+                  <History size={13} className="shrink-0" />
+                  <select onChange={(e) => { logic.loadFromHistory(e.target.value); e.target.value = ""; }} className="bg-purple-50 dark:bg-purple-900/30 border dark:border-purple-800/50 rounded p-1 max-w-[115px] sm:max-w-[150px] outline-none">
+                    <option value="">履歴コピー</option>
+                    {logic.hostHistory.map((h, i) => <option key={i} value={i}>{h.title}</option>)}
+                  </select>
+                </div>
+              )}
+              {logic.dayBlocks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={logic.clearAllDayBlocks}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/50 rounded-md transition whitespace-nowrap"
+                >
+                  <Trash2 size={13} />
+                  <span>全クリア</span>
+                </button>
+              )}
+            </div>
           </div>
           
           <div className="mb-6">
