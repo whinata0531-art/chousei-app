@@ -13,6 +13,9 @@ import {
   LogOut,
   Check,
   RefreshCw,
+  Clock,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
@@ -31,14 +34,73 @@ type WeeklyRoutine = Record<number, RoutineSlot[]>;
 const EMPTY_ROUTINE: WeeklyRoutine = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
 
 const DOW_LABELS = [
-  { label: '日', full: '日曜日', val: 0, color: 'text-red-500' },
-  { label: '月', full: '月曜日', val: 1, color: 'text-gray-700 dark:text-gray-200' },
-  { label: '火', full: '火曜日', val: 2, color: 'text-gray-700 dark:text-gray-200' },
-  { label: '水', full: '水曜日', val: 3, color: 'text-gray-700 dark:text-gray-200' },
-  { label: '木', full: '木曜日', val: 4, color: 'text-gray-700 dark:text-gray-200' },
-  { label: '金', full: '金曜日', val: 5, color: 'text-gray-700 dark:text-gray-200' },
-  { label: '土', full: '土曜日', val: 6, color: 'text-blue-500' },
+  { label: '日', full: '日曜日', val: 0 },
+  { label: '月', full: '月曜日', val: 1 },
+  { label: '火', full: '火曜日', val: 2 },
+  { label: '水', full: '水曜日', val: 3 },
+  { label: '木', full: '木曜日', val: 4 },
+  { label: '金', full: '金曜日', val: 5 },
+  { label: '土', full: '土曜日', val: 6 },
 ];
+
+const hasNonBatsuSlot = (r: WeeklyRoutine | null): boolean => {
+  if (!r || typeof r !== 'object') return false;
+  return Object.values(r).some(
+    arr => Array.isArray(arr) && arr.some(s => s.status === 'maru' || s.status === 'sankaku')
+  );
+};
+
+const getDowBadgeClass = (val: number, hasSlots: boolean) => {
+  if (val === 0) {
+    return hasSlots
+      ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
+      : 'bg-red-50 text-red-500 dark:bg-red-950/30 dark:text-red-400';
+  }
+  if (val === 6) {
+    return hasSlots
+      ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+      : 'bg-blue-50 text-blue-500 dark:bg-blue-950/30 dark:text-blue-400';
+  }
+  return hasSlots
+    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+    : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400';
+};
+
+function StatusSegmentPicker({
+  value,
+  onChange,
+  compact = false,
+}: {
+  value: Status;
+  onChange: (next: Status) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="flex items-center bg-gray-100 dark:bg-gray-800 p-0.5 rounded-lg border border-gray-200/80 dark:border-gray-700 gap-0.5 shrink-0">
+      {(['maru', 'sankaku', 'batsu'] as Status[]).map(st => {
+        const isActive = value === st;
+        const activeStyle =
+          st === 'maru'
+            ? 'bg-green-50 dark:bg-green-900/40 border-green-300 dark:border-green-700 shadow-xs'
+            : st === 'sankaku'
+            ? 'bg-orange-50 dark:bg-orange-900/40 border-orange-300 dark:border-orange-700 shadow-xs'
+            : 'bg-red-50 dark:bg-red-900/40 border-red-300 dark:border-red-700 shadow-xs';
+        return (
+          <button
+            key={st}
+            type="button"
+            onClick={() => onChange(st)}
+            className={`${compact ? 'px-1.5 py-0.5 text-xs sm:text-sm' : 'px-2.5 py-1 text-sm'} rounded-md border transition ${
+              isActive ? activeStyle : 'border-transparent opacity-40 hover:opacity-80'
+            }`}
+          >
+            {st === 'maru' ? '⭕️' : st === 'sankaku' ? '🔺' : '❌'}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -47,6 +109,7 @@ export default function SettingsPage() {
 
   const [routine, setRoutine] = useState<WeeklyRoutine>(EMPTY_ROUTINE);
   const [routineMemory, setRoutineMemory] = useState<Record<number, RoutineSlot[]>>({});
+  const [isDetailedMode, setIsDetailedMode] = useState(false);
   const [saveBadge, setSaveBadge] = useState<'idle' | 'saved'>('idle');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
@@ -68,6 +131,10 @@ export default function SettingsPage() {
     // 回答画面の案内モーダルから飛んできた場合のトリガーフラグを掃除
     if (localStorage.getItem('openShiftAccordion') === 'true') {
       localStorage.removeItem('openShiftAccordion');
+    }
+
+    if (localStorage.getItem('routineDetailedMode') === 'true') {
+      setIsDetailedMode(true);
     }
 
     let currentGuestId = localStorage.getItem('deviceGuestId');
@@ -98,14 +165,22 @@ export default function SettingsPage() {
         .like('time_key', 'ROUTINE::%');
 
       const remoteRoutine = rows && rows.length > 0 ? parseRoutineFromSmartCopyRows(rows) : null;
+      let activeRoutine: WeeklyRoutine | null = null;
 
       if (hasAnyRoutineSlot(localRoutine)) {
+        activeRoutine = localRoutine;
         if (!remoteRoutine) {
           await syncRoutineToSupabase(supabase, guestId, localRoutine);
         }
       } else if (remoteRoutine && hasAnyRoutineSlot(remoteRoutine)) {
+        activeRoutine = remoteRoutine;
         setRoutine(remoteRoutine);
         localStorage.setItem('weeklyRoutine', JSON.stringify(remoteRoutine));
+      }
+
+      if (activeRoutine && hasNonBatsuSlot(activeRoutine)) {
+        setIsDetailedMode(true);
+        localStorage.setItem('routineDetailedMode', 'true');
       }
     };
 
@@ -175,6 +250,35 @@ export default function SettingsPage() {
     setTimeout(() => setSaveBadge('idle'), 2000);
   };
 
+  const handleModeChange = (nextDetailed: boolean) => {
+    if (nextDetailed === isDetailedMode) return;
+    if (nextDetailed) {
+      setIsDetailedMode(true);
+      localStorage.setItem('routineDetailedMode', 'true');
+      return;
+    }
+
+    if (hasNonBatsuSlot(routine)) {
+      if (
+        !confirm(
+          '現在「◯」や「△」で設定されている枠があります。\n「時間だけ入力」に切り替えると、登録済みの枠はすべて「×（予定あり）」に統一されます。よろしいですか？'
+        )
+      ) {
+        return;
+      }
+      const normalized: WeeklyRoutine = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+      for (let dow = 0; dow <= 6; dow++) {
+        normalized[dow] = (routine[dow] || []).map(s => ({ ...s, status: 'batsu' }));
+      }
+      saveRoutine(normalized);
+      showToast('登録済みの枠をすべて予定あり（×）に統一しました', 'info');
+    }
+
+    setBulkStatus('batsu');
+    setIsDetailedMode(false);
+    localStorage.setItem('routineDetailedMode', 'false');
+  };
+
   const totalRoutineSlots = useMemo(
     () => Object.values(routine).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0),
     [routine]
@@ -187,7 +291,8 @@ export default function SettingsPage() {
 
   const toggleDowAllDay = (dow: number, checked: boolean) => {
     if (checked) {
-      setRoutineMemory(prev => ({ ...prev, [dow]: routine[dow] }));
+      const currentTimes = (routine[dow] || []).filter(s => !s.isAllDay);
+      setRoutineMemory(prev => ({ ...prev, [dow]: currentTimes }));
       const allDaySlot: RoutineSlot = { id: generateId(), isAllDay: true, start: '', end: '', status: 'batsu' };
       saveRoutine({ ...routine, [dow]: [allDaySlot] });
     } else {
@@ -197,8 +302,21 @@ export default function SettingsPage() {
   };
 
   const addSlot = (dow: number) => {
-    const newSlot: RoutineSlot = { id: generateId(), isAllDay: false, start: '12:00', end: '18:00', status: 'batsu' };
-    saveRoutine({ ...routine, [dow]: [...routine[dow], newSlot] });
+    const current = (routine[dow] || []).filter(s => !s.isAllDay);
+    let start = '09:00';
+    let end = '17:00';
+    if (current.length > 0) {
+      const last = current[current.length - 1];
+      if (last.end && last.end < '18:00') {
+        start = '18:00';
+        end = '21:00';
+      } else {
+        start = '19:00';
+        end = '22:00';
+      }
+    }
+    const newSlot: RoutineSlot = { id: generateId(), isAllDay: false, start, end, status: 'batsu' };
+    saveRoutine({ ...routine, [dow]: [...current, newSlot] });
   };
 
   const updateSlot = (dow: number, id: string, field: keyof RoutineSlot, value: any) => {
@@ -238,15 +356,16 @@ export default function SettingsPage() {
       return;
     }
 
+    const targetStatus: Status = isDetailedMode ? bulkStatus : 'batsu';
     const nextRoutine: WeeklyRoutine = { ...routine };
     bulkDows.forEach(dow => {
       if (bulkIsAllDay) {
-        nextRoutine[dow] = [{ id: generateId(), isAllDay: true, start: '', end: '', status: bulkStatus }];
+        nextRoutine[dow] = [{ id: generateId(), isAllDay: true, start: '', end: '', status: targetStatus }];
       } else {
         const current = (nextRoutine[dow] || []).filter(s => !s.isAllDay);
         nextRoutine[dow] = [
           ...current,
-          { id: generateId(), isAllDay: false, start: bulkStart, end: bulkEnd, status: bulkStatus },
+          { id: generateId(), isAllDay: false, start: bulkStart, end: bulkEnd, status: targetStatus },
         ];
       }
     });
@@ -255,7 +374,7 @@ export default function SettingsPage() {
     const dowText = DOW_LABELS.filter(d => bulkDows.includes(d.val))
       .map(d => d.label)
       .join('・');
-    showToast(`${dowText}曜日にシフトを追加しました✨`, 'success');
+    showToast(`${dowText}曜日に追加しました✨`, 'success');
     setBulkDows([]);
   };
 
@@ -303,13 +422,14 @@ export default function SettingsPage() {
         <div className="w-16" />
       </div>
 
-      {/* カード1：曜日ごとの固定シフト */}
-      <section className="bg-white dark:bg-gray-900 rounded-xl shadow-md border-t-4 border-t-purple-500 px-5 pb-6 pt-5 space-y-5">
+      {/* カード1：固定シフト */}
+      <section className="bg-white dark:bg-gray-900 rounded-xl shadow-md border-t-4 border-t-purple-500 px-4 sm:px-5 pb-6 pt-5 space-y-4">
+        {/* ヘッダー */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b dark:border-gray-800 pb-3">
           <div className="flex items-center gap-1.5 min-w-0">
             <CalendarDays className="text-purple-600 dark:text-purple-400 shrink-0" size={20} />
             <h2 className="text-base sm:text-lg font-extrabold text-gray-800 dark:text-gray-100 whitespace-nowrap">
-              曜日ごとの固定シフト
+              固定シフト
             </h2>
             <span className="text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
               {totalRoutineSlots}枠
@@ -339,16 +459,56 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-          授業やバイトなど毎週の予定を登録しておくと、回答画面でワンタップで自動入力できます（クラウドに自動保存されます）。
-        </p>
+        {/* 2択モード切り替えセグメントバー & 1行ガイド */}
+        <div className="space-y-2">
+          <div
+            role="tablist"
+            aria-label="シフト入力モード"
+            className="grid grid-cols-2 gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!isDetailedMode}
+              onClick={() => handleModeChange(false)}
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm transition whitespace-nowrap ${
+                !isDetailedMode
+                  ? 'bg-white dark:bg-gray-700 text-purple-700 dark:text-purple-300 shadow-xs font-extrabold'
+                  : 'text-gray-500 dark:text-gray-400 font-bold hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+            >
+              <Clock size={14} className="shrink-0" />
+              <span>時間だけ入力</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={isDetailedMode}
+              onClick={() => handleModeChange(true)}
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs sm:text-sm transition whitespace-nowrap ${
+                isDetailedMode
+                  ? 'bg-white dark:bg-gray-700 text-purple-700 dark:text-purple-300 shadow-xs font-extrabold'
+                  : 'text-gray-500 dark:text-gray-400 font-bold hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+            >
+              <SlidersHorizontal size={14} className="shrink-0" />
+              <span>◯・△も設定する</span>
+            </button>
+          </div>
 
-        {/* 曜日を選んでまとめて追加パネル */}
-        <div className="bg-purple-50/70 dark:bg-purple-900/15 border border-purple-200 dark:border-purple-800/40 rounded-xl p-3.5 sm:p-4 space-y-3">
+          <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed px-0.5">
+            {isDetailedMode
+              ? '曜日・時間帯ごとに ⭕️・🔺・❌ を使い分けて登録し、回答画面でワンタップ反映できます。'
+              : 'バイトや授業など予定がある時間を入れておくと、回答画面でワンタップで自動的に ❌ にできます。'}
+          </p>
+        </div>
+
+        {/* スリム化したまとめて追加バー */}
+        <div className="bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/70 dark:border-purple-800/40 rounded-xl p-3 sm:p-3.5 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] sm:text-xs font-bold text-purple-800 dark:text-purple-300 flex items-center gap-1 whitespace-nowrap">
               <Sparkles size={13} className="shrink-0" />
-              曜日を選んでまとめて追加
+              まとめて追加
             </span>
             <button
               type="button"
@@ -359,22 +519,28 @@ export default function SettingsPage() {
                   : 'bg-white dark:bg-gray-800 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-700 hover:bg-purple-100'
               }`}
             >
-              平日まとめて選択
+              平日を選択
             </button>
           </div>
 
           <div className="grid grid-cols-7 gap-1.5">
             {DOW_LABELS.map(dow => {
               const selected = bulkDows.includes(dow.val);
+              const unselectedColor =
+                dow.val === 0
+                  ? 'text-red-500 dark:text-red-400'
+                  : dow.val === 6
+                  ? 'text-blue-500 dark:text-blue-400'
+                  : 'text-gray-700 dark:text-gray-200';
               return (
                 <button
                   key={dow.val}
                   type="button"
                   onClick={() => toggleBulkDow(dow.val)}
-                  className={`py-2 rounded-lg text-xs font-bold border transition ${
+                  className={`py-1.5 rounded-lg text-xs font-bold border transition ${
                     selected
                       ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-purple-200 dark:border-gray-700 hover:bg-purple-100/60'
+                      : `bg-white dark:bg-gray-800 ${unselectedColor} border-purple-200/80 dark:border-gray-700 hover:bg-purple-100/60`
                   }`}
                 >
                   {dow.label}
@@ -383,236 +549,244 @@ export default function SettingsPage() {
             })}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={bulkIsAllDay}
-                onChange={e => setBulkIsAllDay(e.target.checked)}
-                className="w-3.5 h-3.5 text-purple-600 rounded"
-              />
-              終日にする
-            </label>
+          {/* 3段目: 終日ピル & 時間入力（詳細モード時は◯△×ピッカーも表示） */}
+          {isDetailedMode ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBulkIsAllDay(prev => !prev)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-bold border transition whitespace-nowrap ${
+                    bulkIsAllDay
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-purple-200/80 dark:border-gray-700 hover:border-purple-400'
+                  }`}
+                >
+                  {bulkIsAllDay ? (
+                    <Check size={12} strokeWidth={3} />
+                  ) : (
+                    <span className="w-2.5 h-2.5 rounded-[3px] border border-gray-300 dark:border-gray-600 inline-block" />
+                  )}
+                  終日
+                </button>
+                <StatusSegmentPicker value={bulkStatus} onChange={setBulkStatus} />
+              </div>
 
-            <div className="flex bg-white dark:bg-gray-800 p-0.5 rounded-lg border border-purple-200 dark:border-gray-700 gap-1">
-              <button
-                type="button"
-                onClick={() => setBulkStatus('maru')}
-                className={`px-2.5 py-1 text-sm rounded-md transition ${
-                  bulkStatus === 'maru'
-                    ? 'bg-green-50 dark:bg-green-900/40 shadow-xs border border-green-300 dark:border-green-700'
-                    : 'opacity-45 hover:opacity-80'
-                }`}
-              >
-                ⭕️
-              </button>
-              <button
-                type="button"
-                onClick={() => setBulkStatus('sankaku')}
-                className={`px-2.5 py-1 text-sm rounded-md transition ${
-                  bulkStatus === 'sankaku'
-                    ? 'bg-orange-50 dark:bg-orange-900/40 shadow-xs border border-orange-300 dark:border-orange-700'
-                    : 'opacity-45 hover:opacity-80'
-                }`}
-              >
-                🔺
-              </button>
-              <button
-                type="button"
-                onClick={() => setBulkStatus('batsu')}
-                className={`px-2.5 py-1 text-sm rounded-md transition ${
-                  bulkStatus === 'batsu'
-                    ? 'bg-red-50 dark:bg-red-900/40 shadow-xs border border-red-300 dark:border-red-700'
-                    : 'opacity-45 hover:opacity-80'
-                }`}
-              >
-                ❌
-              </button>
+              {!bulkIsAllDay && (
+                <div className="flex items-center justify-between bg-white dark:bg-gray-800 px-3 h-9 rounded-lg border border-purple-200/80 dark:border-gray-700">
+                  <input
+                    type="time"
+                    value={bulkStart}
+                    onChange={e => setBulkStart(e.target.value)}
+                    className="bg-transparent dark:text-gray-100 text-xs sm:text-sm font-semibold flex-1 min-w-0 outline-none text-center"
+                  />
+                  <span className="text-gray-400 text-xs px-1 shrink-0">〜</span>
+                  <input
+                    type="time"
+                    value={bulkEnd}
+                    onChange={e => setBulkEnd(e.target.value)}
+                    className="bg-transparent dark:text-gray-100 text-xs sm:text-sm font-semibold flex-1 min-w-0 outline-none text-center"
+                  />
+                </div>
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkIsAllDay(prev => !prev)}
+                className={`inline-flex items-center gap-1.5 px-2.5 h-9 rounded-lg text-xs font-bold border transition whitespace-nowrap shrink-0 ${
+                  bulkIsAllDay
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-purple-200/80 dark:border-gray-700 hover:border-purple-400'
+                }`}
+              >
+                {bulkIsAllDay ? (
+                  <Check size={12} strokeWidth={3} />
+                ) : (
+                  <span className="w-2.5 h-2.5 rounded-[3px] border border-gray-300 dark:border-gray-600 inline-block" />
+                )}
+                終日
+              </button>
 
-          {!bulkIsAllDay && (
-            <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded-lg border border-purple-200/80 dark:border-gray-700">
-              <input
-                type="time"
-                value={bulkStart}
-                onChange={e => setBulkStart(e.target.value)}
-                className="p-1 bg-transparent dark:text-gray-100 text-sm flex-1 outline-none text-center"
-              />
-              <span className="text-gray-400 text-xs">〜</span>
-              <input
-                type="time"
-                value={bulkEnd}
-                onChange={e => setBulkEnd(e.target.value)}
-                className="p-1 bg-transparent dark:text-gray-100 text-sm flex-1 outline-none text-center"
-              />
+              {bulkIsAllDay ? (
+                <div className="flex-1 min-w-0 h-9 flex items-center justify-center rounded-lg bg-purple-100/70 dark:bg-purple-900/30 border border-purple-200/70 dark:border-purple-800/40 text-xs font-bold text-purple-700 dark:text-purple-300">
+                  終日（0:00 〜 23:59）
+                </div>
+              ) : (
+                <div className="flex-1 min-w-0 flex items-center justify-between bg-white dark:bg-gray-800 px-2.5 h-9 rounded-lg border border-purple-200/80 dark:border-gray-700">
+                  <input
+                    type="time"
+                    value={bulkStart}
+                    onChange={e => setBulkStart(e.target.value)}
+                    className="bg-transparent dark:text-gray-100 text-xs sm:text-sm font-semibold flex-1 min-w-0 outline-none text-center"
+                  />
+                  <span className="text-gray-400 text-xs px-1 shrink-0">〜</span>
+                  <input
+                    type="time"
+                    value={bulkEnd}
+                    onChange={e => setBulkEnd(e.target.value)}
+                    className="bg-transparent dark:text-gray-100 text-xs sm:text-sm font-semibold flex-1 min-w-0 outline-none text-center"
+                  />
+                </div>
+              )}
             </div>
           )}
 
+          {/* 4段目: 追加ボタン */}
           <button
             type="button"
             onClick={handleBulkAddRoutine}
             className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm font-bold rounded-lg shadow-xs transition flex items-center justify-center gap-1.5"
           >
-            <Plus size={16} /> 選んだ曜日にまとめて追加する
+            <Plus size={15} />
+            <span>
+              {bulkDows.length > 0
+                ? (() => {
+                    const selectedDowText = DOW_LABELS.filter(d => bulkDows.includes(d.val))
+                      .map(d => d.label)
+                      .join('・');
+                    if (!isDetailedMode) return `${selectedDowText}曜日に追加する`;
+                    const mark = bulkStatus === 'maru' ? '⭕️' : bulkStatus === 'sankaku' ? '🔺' : '❌';
+                    return `${selectedDowText}曜日に ${mark} で追加する`;
+                  })()
+                : '選んだ曜日にまとめて追加'}
+            </span>
           </button>
         </div>
 
-        {/* 7曜日のスリム一覧 */}
-        <div className="space-y-2.5">
+        {/* 7曜日のフラット週間スケジュールボード */}
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden bg-white dark:bg-gray-900">
           {DOW_LABELS.map(dow => {
             const dowSlots = routine[dow.val] || [];
             const allDay = isDowAllDay(dow.val);
-
-            if (dowSlots.length === 0) {
-              return (
-                <div
-                  key={dow.val}
-                  className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/40"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`font-bold text-sm whitespace-nowrap ${dow.color}`}>{dow.full}</span>
-                    <label className="flex items-center gap-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white dark:bg-gray-800 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800/50 whitespace-nowrap shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        onChange={e => toggleDowAllDay(dow.val, e.target.checked)}
-                        className="w-3 h-3 text-blue-600"
-                      />
-                      終日
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => addSlot(dow.val)}
-                      className="text-[11px] font-bold flex items-center gap-0.5 px-2.5 py-1 rounded-md bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 transition whitespace-nowrap"
-                    >
-                      <Plus size={12} /> 追加
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-
-            if (allDay) {
-              return (
-                <div
-                  key={dow.val}
-                  className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border border-blue-200 dark:border-blue-800/60 bg-blue-50/50 dark:bg-blue-900/15 shadow-xs"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`font-bold text-sm whitespace-nowrap ${dow.color}`}>{dow.full}</span>
-                    <label className="flex items-center gap-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white dark:bg-gray-800 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800/50 whitespace-nowrap shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={true}
-                        onChange={e => toggleDowAllDay(dow.val, e.target.checked)}
-                        className="w-3 h-3 text-blue-600"
-                      />
-                      終日
-                    </label>
-                  </div>
-                  <div className="flex items-center shrink-0">
-                    <div className="flex bg-gray-200/80 dark:bg-gray-700 p-0.5 rounded-md gap-0.5">
-                      {(['maru', 'sankaku', 'batsu'] as Status[]).map(st => (
-                        <button
-                          key={st}
-                          type="button"
-                          onClick={() => updateSlot(dow.val, dowSlots[0].id, 'status', st)}
-                          className={`px-2 py-0.5 text-sm rounded transition ${
-                            dowSlots[0].status === st
-                              ? 'bg-white dark:bg-gray-600 shadow-xs font-bold'
-                              : 'opacity-40 hover:opacity-75'
-                          }`}
-                        >
-                          {st === 'maru' ? '⭕️' : st === 'sankaku' ? '🔺' : '❌'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            }
+            const hasSlots = dowSlots.length > 0;
+            const rowBgClass = allDay
+              ? 'bg-purple-50/35 dark:bg-purple-950/15'
+              : hasSlots
+              ? 'bg-white dark:bg-gray-900'
+              : 'bg-gray-50/40 dark:bg-gray-900/40';
 
             return (
-              <div
-                key={dow.val}
-                className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-900 shadow-xs"
-              >
-                <div className="bg-gray-50 dark:bg-gray-800/80 px-3.5 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className={`font-bold text-sm whitespace-nowrap ${dow.color}`}>{dow.full}</span>
-                    <label className="flex items-center gap-1 text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white dark:bg-gray-700 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800/50 whitespace-nowrap">
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        onChange={e => toggleDowAllDay(dow.val, e.target.checked)}
-                        className="w-3 h-3 text-blue-600"
-                      />
-                      終日
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => addSlot(dow.val)}
-                    className="text-[11px] font-bold flex items-center gap-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-2 py-1 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-100 transition whitespace-nowrap"
-                  >
-                    <Plus size={12} /> 枠を追加
-                  </button>
-                </div>
-
-                <div className="p-2.5 space-y-2">
-                  {dowSlots.map(slot => (
-                    <div
-                      key={slot.id}
-                      className="flex items-center justify-between gap-1.5 bg-gray-50 dark:bg-gray-800/70 px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700"
+              <div key={dow.val} className={`px-3 sm:px-3.5 py-2.5 transition-colors ${rowBgClass}`}>
+                {/* 1段目: 曜日バッジ + 終日ピル（全状態で左位置を統一） & 右側アクション */}
+                <div className="flex items-center justify-between gap-2 min-h-[32px]">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-extrabold shrink-0 ${getDowBadgeClass(
+                        dow.val,
+                        hasSlots
+                      )}`}
                     >
-                      <div className="flex items-center gap-1 min-w-0 flex-1">
-                        <input
-                          type="time"
-                          value={slot.start}
-                          onChange={e => updateSlot(dow.val, slot.id, 'start', e.target.value)}
-                          className="p-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 dark:text-gray-100 rounded text-xs sm:text-sm min-w-0 flex-1 max-w-[92px] outline-none focus:ring-1 focus:ring-purple-500"
-                        />
-                        <span className="text-gray-400 text-xs shrink-0">〜</span>
-                        <input
-                          type="time"
-                          value={slot.end}
-                          onChange={e => updateSlot(dow.val, slot.id, 'end', e.target.value)}
-                          className="p-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 dark:text-gray-100 rounded text-xs sm:text-sm min-w-0 flex-1 max-w-[92px] outline-none focus:ring-1 focus:ring-purple-500"
-                        />
-                      </div>
+                      {dow.label}
+                    </span>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <div className="flex bg-gray-200/80 dark:bg-gray-700 p-0.5 rounded-md gap-0.5">
-                          {(['maru', 'sankaku', 'batsu'] as Status[]).map(st => (
-                            <button
-                              key={st}
-                              type="button"
-                              onClick={() => updateSlot(dow.val, slot.id, 'status', st)}
-                              className={`px-1.5 py-0.5 text-sm rounded transition ${
-                                slot.status === st
-                                  ? 'bg-white dark:bg-gray-600 shadow-xs'
-                                  : 'opacity-40 hover:opacity-75'
-                              }`}
-                            >
-                              {st === 'maru' ? '⭕️' : st === 'sankaku' ? '🔺' : '❌'}
-                            </button>
-                          ))}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeSlot(dow.val, slot.id)}
-                          className="text-gray-400 hover:text-red-500 p-1 transition"
-                          title="枠を削除"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => toggleDowAllDay(dow.val, !allDay)}
+                      className={
+                        allDay
+                          ? 'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-600 text-white shadow-xs transition whitespace-nowrap'
+                          : 'inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-bold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-purple-300 hover:text-purple-600 transition whitespace-nowrap'
+                      }
+                    >
+                      {allDay ? (
+                        <Check size={12} strokeWidth={3} />
+                      ) : (
+                        <span className="w-2.5 h-2.5 rounded-[3px] border border-gray-300 dark:border-gray-600 inline-block" />
+                      )}
+                      終日
+                    </button>
+                  </div>
+
+                  {/* 右側: 状態別 */}
+                  <div className="flex items-center shrink-0">
+                    {!hasSlots ? (
+                      <button
+                        type="button"
+                        onClick={() => addSlot(dow.val)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-purple-300 hover:text-purple-600 transition whitespace-nowrap"
+                      >
+                        <Plus size={13} /> 時間追加
+                      </button>
+                    ) : allDay ? (
+                      isDetailedMode ? (
+                        <StatusSegmentPicker
+                          value={dowSlots[0].status}
+                          onChange={st => updateSlot(dow.val, dowSlots[0].id, 'status', st)}
+                          compact
+                        />
+                      ) : (
+                        <span className="text-xs font-bold text-purple-700/80 dark:text-purple-300/80 whitespace-nowrap">
+                          終日（0:00〜23:59）
+                        </span>
+                      )
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => addSlot(dow.val)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition whitespace-nowrap"
+                      >
+                        <Plus size={13} /> 枠を追加
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* 2段目: 個別時間枠リスト */}
+                {!allDay && hasSlots && (
+                  <div className={`mt-2 space-y-1.5 ${isDetailedMode ? 'sm:pl-9' : 'pl-9'}`}>
+                    {dowSlots.map(slot => {
+                      const capsuleStatusClass =
+                        isDetailedMode && slot.status === 'maru'
+                          ? 'border-green-300/90 dark:border-green-800/60 bg-green-50/35 dark:bg-green-950/15'
+                          : isDetailedMode && slot.status === 'sankaku'
+                          ? 'border-orange-300/90 dark:border-orange-800/60 bg-orange-50/35 dark:bg-orange-950/15'
+                          : 'border-gray-200/90 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80';
+
+                      return (
+                        <div key={slot.id} className="flex items-center justify-between gap-1.5">
+                          <div
+                            className={`flex-1 min-w-0 flex items-center justify-between border rounded-lg transition focus-within:border-purple-400 focus-within:bg-white dark:focus-within:bg-gray-800 ${capsuleStatusClass} ${
+                              isDetailedMode ? 'px-1.5 py-1' : 'px-3 py-1.5'
+                            }`}
+                          >
+                            <input
+                              type="time"
+                              value={slot.start}
+                              onChange={e => updateSlot(dow.val, slot.id, 'start', e.target.value)}
+                              className="bg-transparent text-gray-800 dark:text-gray-100 text-xs sm:text-sm font-semibold min-w-0 flex-1 outline-none text-center"
+                            />
+                            <span className="text-gray-400 text-xs px-0.5 shrink-0">〜</span>
+                            <input
+                              type="time"
+                              value={slot.end}
+                              onChange={e => updateSlot(dow.val, slot.id, 'end', e.target.value)}
+                              className="bg-transparent text-gray-800 dark:text-gray-100 text-xs sm:text-sm font-semibold min-w-0 flex-1 outline-none text-center"
+                            />
+                          </div>
+
+                          {isDetailedMode && (
+                            <StatusSegmentPicker
+                              value={slot.status}
+                              onChange={st => updateSlot(dow.val, slot.id, 'status', st)}
+                              compact
+                            />
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => removeSlot(dow.val, slot.id)}
+                            className="text-gray-400 hover:text-red-500 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition shrink-0"
+                            title="枠を削除"
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
