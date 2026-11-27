@@ -69,10 +69,10 @@ export function useEventLogic(eventId: string) {
     // もし両方とも無ければ、Googleログインのトークンが保存されていない
     if (!accessToken && !refreshToken) return null;
 
-    // 2. Access Tokenがある場合、まだ生きているかGoogleに確認する
+    // 2. Access Tokenがある場合、まだ生きているかGoogleに確認する（読み取り専用スコープ対応）
     let needsRefresh = !accessToken;
     if (accessToken) {
-      const testRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      const testRes = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=1', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (testRes.status === 401) {
@@ -119,7 +119,7 @@ export function useEventLogic(eventId: string) {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/calendar',
+        scopes: 'https://www.googleapis.com/auth/calendar.events.readonly',
         queryParams,
         redirectTo: window.location.href,
       },
@@ -422,82 +422,6 @@ export function useEventLogic(eventId: string) {
     setFetchingSchedules(false);
   };
 
- // 💡 修正ポイント：スマートでマイルドな確認メッセージ！
-  const toggleConfirmSlot = async (slotId: string, currentIsConfirmed: boolean, startAt: string, endAt: string) => {
-    const isConfirming = !currentIsConfirmed;
-    
-    // ログイン状態に合わせてメッセージを切り替える！
-    let confirmMessage = '';
-    if (isConfirming) {
-      confirmMessage = isGoogleLoggedIn 
-        ? 'この日程を仮確定にしますか？\n（カレンダーにも同期されます📅）' 
-        : 'この日程を仮確定にしますか？';
-    } else {
-      confirmMessage = isGoogleLoggedIn 
-        ? '仮確定を解除しますか？\n（カレンダーの同期も解除されます）' 
-        : 'この日程の仮確定を解除しますか？';
-    }
-      
-    if (!confirm(confirmMessage)) return;
-    setSubmitting(true);
-
-    // 💡 古い取り方を消して、魔法のツールを呼ぶだけにする！
-    const providerToken = await getValidGoogleToken();
-
-    if (providerToken) {
-      const sTime = getFixedDate(startAt).toISOString();
-      const eTime = getFixedDate(endAt).toISOString();
-      const gEventTitle = `[最強調整] ${event.title}`;
-
-      if (isConfirming) {
-        const { data: responsesData } = await supabase
-          .from('responses')
-          .select('email')
-          .eq('event_id', eventId)
-          .not('email', 'is', null);
-          
-        const attendeesList = responsesData?.map(r => ({ email: r.email })) || [];
-
-        const gEvent = {
-          summary: gEventTitle,
-          start: { dateTime: sTime },
-          end: { dateTime: eTime },
-          attendees: attendeesList,
-        };
-
-        await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${providerToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(gEvent),
-        });
-      } else {
-        try {
-          const searchRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(sTime)}&timeMax=${encodeURIComponent(eTime)}`, {
-            headers: { Authorization: `Bearer ${providerToken}` }
-          });
-          if (searchRes.ok) {
-            const searchData = await searchRes.json();
-            for (const item of searchData.items || []) {
-              if (item.summary === gEventTitle) {
-                await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${item.id}?sendUpdates=all`, {
-                  method: 'DELETE',
-                  headers: { Authorization: `Bearer ${providerToken}` }
-                });
-              }
-            }
-          }
-        } catch (e) {
-          console.error('カレンダーの削除に失敗:', e);
-        }
-      }
-    }
-
-    await supabase.from('slots').update({ is_confirmed: isConfirming }).eq('id', slotId);
-    await fetchAll(); 
-    setSubmitting(false);
-    showToast(isConfirming ? '📌 日程を仮確定にしました！' : '仮確定を解除しました', 'success');
-  };
-
   const applyWeeklyRoutine = () => {
     const savedRoutine = localStorage.getItem('weeklyRoutine');
     if (!savedRoutine) {
@@ -654,33 +578,6 @@ export function useEventLogic(eventId: string) {
         showToast('候補日程とGoogleカレンダーの予定は被っていませんでした✨', 'info');
       }
     } catch (error) { showToast('カレンダーの同期中にエラーが発生しました', 'error'); }
-    setSubmitting(false);
-  };
-
-  const addSlotToGoogleCalendar = async (startAt: string, endAt: string, title: string) => {
-    // 💡 ここも魔法のツールに差し替え！
-    const providerToken = await getValidGoogleToken();
-    if (!providerToken) {
-      showToast('Googleカレンダーの連携を更新します...', 'info');
-      await reconnectGoogleHere();
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const gEvent = {
-        summary: `[最強調整] ${title}`,
-        start: { dateTime: getFixedDate(startAt).toISOString() },
-        end: { dateTime: getFixedDate(endAt).toISOString() },
-      };
-      const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${providerToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(gEvent),
-      });
-      if (res.ok) showToast('🎉 Googleカレンダーに予定を追加しました！', 'success');
-      else showToast('カレンダーへの追加に失敗しました', 'error');
-    } catch (error) { showToast('通信エラーが発生しました', 'error'); }
     setSubmitting(false);
   };
 
@@ -845,8 +742,8 @@ export function useEventLogic(eventId: string) {
     showScrollTop, isGoogleLoggedIn, isEditingTitle, setIsEditingTitle,
     editTitleStr, setEditTitleStr, editDescStr, setEditDescStr,
     removeRecentEvent, handleSaveEventInfo, fetchStats, fetchMySchedules,
-    toggleConfirmSlot, applyWeeklyRoutine, applySmartCopy, applyGoogleCalendar,
-    addSlotToGoogleCalendar, handleSubmit, handleDeleteEvent, scrollToTop,
+    applyWeeklyRoutine, applySmartCopy, applyGoogleCalendar,
+    handleSubmit, handleDeleteEvent, scrollToTop,
     sortedAndFilteredSlots, maxMaru, getSlotTier, confirmedSlots,
     isEventConfirmed, isHost
   };

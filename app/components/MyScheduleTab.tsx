@@ -36,21 +36,6 @@ export default function MyScheduleTab({ logic }: Props) {
             <ChevronRight size={18} className="text-gray-400 group-hover:text-yellow-500 transition-colors" />
           </div>
           <p className="text-sm text-gray-700 dark:text-gray-300 font-bold truncate pr-4">{schedule.eventTitle}</p>
-          
-          {logic.isGoogleLoggedIn && (
-            <div className="mt-3 pt-3 border-t dark:border-gray-700 text-right">
-              <button 
-                onClick={(e) => {
-                  e.preventDefault(); // 💡 魔法のコード：親の<Link>への移動をキャンセル！
-                  logic.addSlotToGoogleCalendar(schedule.start_at, schedule.end_at, schedule.eventTitle);
-                }} 
-                disabled={logic.submitting} 
-                className="px-3 py-1.5 text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors border border-blue-200 dark:border-blue-800/50 shadow-sm relative z-10 disabled:opacity-50"
-              >
-                📅 Googleカレンダーに追加
-              </button>
-            </div>
-          )}
         </Link>
       </div>
     );

@@ -63,6 +63,16 @@ export default function TopPage() {
       {/* 💡 タブなしで直接イベント作成画面を表示！ */}
       <CreateEventTab logic={logic} />
 
+      <footer className="mt-8 mb-2 text-center text-xs text-gray-400 dark:text-gray-500 flex items-center justify-center gap-4">
+        <Link href="/terms" className="hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+          利用規約
+        </Link>
+        <span>·</span>
+        <Link href="/privacy" className="hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+          プライバシーポリシー
+        </Link>
+      </footer>
+
       <button
         onClick={logic.scrollToTop}
         aria-hidden={!logic.showScrollTop}
