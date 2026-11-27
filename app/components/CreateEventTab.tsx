@@ -36,9 +36,9 @@ export default function CreateEventTab({ logic }: Props) {
 
   return (
     <>
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md px-6 pb-6 relative">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md px-4 sm:px-6 pb-6 relative">
         {/* カード最上部の青いバー＋角丸＋余白（常に1つだけ上部に残り、スクロール時は下の要素がこの下にすーっと潜り込む） */}
-        <div className="sticky top-0 z-30 -mx-6 bg-white dark:bg-[#0a0a0a]">
+        <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 bg-white dark:bg-[#0a0a0a]">
           <div className="h-3 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 rounded-t-xl" />
         </div>
 
@@ -69,35 +69,67 @@ export default function CreateEventTab({ logic }: Props) {
           </button>
 
           {logic.isBulkOpen && (
-            <div className="p-4 space-y-4 border-t border-blue-200/50 dark:border-blue-800/30">
-              <div className="flex items-center gap-2">
-                <input type="date" value={logic.bulkStartDate} onChange={e => logic.setBulkStartDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
-                <span className="text-gray-500">〜</span>
-                <input type="date" value={logic.bulkEndDate} onChange={e => logic.setBulkEndDate(e.target.value)} className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500" />
+            <div className="p-3.5 sm:p-4 space-y-3.5 border-t border-blue-200/50 dark:border-blue-800/30">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex items-center gap-2 flex-1 min-w-0 bg-white dark:bg-gray-800 px-2.5 py-1.5 rounded-lg border border-blue-200/80 dark:border-gray-600">
+                  <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0 sm:hidden">開始</span>
+                  <input
+                    type="date"
+                    value={logic.bulkStartDate}
+                    onChange={e => logic.setBulkStartDate(e.target.value)}
+                    className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none"
+                  />
+                </div>
+                <span className="text-gray-400 text-xs text-center hidden sm:inline shrink-0">〜</span>
+                <div className="flex items-center gap-2 flex-1 min-w-0 bg-white dark:bg-gray-800 px-2.5 py-1.5 rounded-lg border border-blue-200/80 dark:border-gray-600">
+                  <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0 sm:hidden">終了</span>
+                  <input
+                    type="date"
+                    value={logic.bulkEndDate}
+                    onChange={e => logic.setBulkEndDate(e.target.value)}
+                    className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none"
+                  />
+                </div>
               </div>
-              <div className="flex gap-2 flex-wrap items-center">
-                {logic.DOW_LABELS.map(dow => (
-                  <button key={dow.val} onClick={() => logic.toggleDow(dow.val)}
-                    className={`w-10 h-10 rounded-full font-bold text-sm border transition-colors ${logic.selectedDows.includes(dow.val) ? 'bg-blue-500 text-white border-blue-500' : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
-                    {dow.label}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-blue-800 dark:text-blue-300">対象の曜日</span>
+                  <button
+                    type="button"
+                    onClick={logic.toggleEveryday}
+                    className={`px-3 py-1 rounded-full font-bold text-xs border transition-colors whitespace-nowrap ${logic.selectedDows.length === 7 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-gray-700 hover:bg-blue-100/60'}`}
+                  >
+                    毎日を選択
                   </button>
-                ))}
-                <button onClick={logic.toggleEveryday} className={`ml-2 px-3 py-2 rounded-full font-bold text-sm border transition-colors ${logic.selectedDows.length === 7 ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 dark:border-gray-700'}`}>
-                  毎日
-                </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {logic.DOW_LABELS.map(dow => (
+                    <button
+                      key={dow.val}
+                      type="button"
+                      onClick={() => logic.toggleDow(dow.val)}
+                      className={`py-2 rounded-lg font-bold text-xs sm:text-sm border transition-colors ${logic.selectedDows.includes(dow.val) ? 'bg-blue-500 text-white border-blue-500 shadow-xs' : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
+                    >
+                      {dow.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2">
                 <input type="checkbox" id="bulkAllDay" checked={logic.bulkIsAllDay} onChange={e => logic.setBulkIsAllDay(e.target.checked)} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
                 <label htmlFor="bulkAllDay" className="text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">時間を指定せず「終日」にする</label>
               </div>
 
               {!logic.bulkIsAllDay && (
-                <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700">
-                  <input type="time" value={logic.bulkStart} onChange={e => logic.setBulkStart(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
-                  <span className="text-gray-500">〜</span>
-                  <input type="time" value={logic.bulkEnd} onChange={e => logic.setBulkEnd(e.target.value)} className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none" />
-                  <select value={logic.bulkInterval} onChange={e => logic.setBulkInterval(e.target.value)} className="p-1 border-l dark:border-gray-600 pl-2 text-sm flex-1 text-gray-600 dark:text-gray-300 dark:bg-gray-800 outline-none">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="flex items-center justify-between gap-2 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-blue-200/80 dark:border-gray-700 flex-1 min-w-0">
+                    <input type="time" value={logic.bulkStart} onChange={e => logic.setBulkStart(e.target.value)} className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none text-center" />
+                    <span className="text-gray-400 text-xs shrink-0">〜</span>
+                    <input type="time" value={logic.bulkEnd} onChange={e => logic.setBulkEnd(e.target.value)} className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none text-center" />
+                  </div>
+                  <select value={logic.bulkInterval} onChange={e => logic.setBulkInterval(e.target.value)} className="px-3 py-2 bg-white dark:bg-gray-800 border border-blue-200/80 dark:border-gray-700 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 sm:w-32 outline-none">
                     <option value="60">60分枠</option>
                     <option value="90">90分枠</option>
                     <option value="120">2時間枠</option>
@@ -105,24 +137,24 @@ export default function CreateEventTab({ logic }: Props) {
                   </select>
                 </div>
               )}
-              <button onClick={logic.generateBulkSlots} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition mt-2">条件に合う枠を一気に追加する</button>
+              <button onClick={logic.generateBulkSlots} className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition">条件に合う枠を一気に追加する</button>
             </div>
           )}
         </div>
 
         <div>
-          <div className="sticky top-3 z-20 -mx-6 px-6 pt-1 pb-2.5 mb-4 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex justify-between items-center gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <h3 className="font-bold text-base sm:text-lg dark:text-gray-100 whitespace-nowrap">個別の日程調整</h3>
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full whitespace-nowrap">
+          <div className="sticky top-3 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 pt-1 pb-2.5 mb-4 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <h3 className="font-extrabold text-sm sm:text-lg text-gray-800 dark:text-gray-100 whitespace-nowrap">個別の日程調整</h3>
+              <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
                 {logic.totalSlotsCount}枠
               </span>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center justify-end gap-1.5 min-w-0 flex-1">
               {logic.hostHistory.length > 0 && (
-                <div className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
-                  <History size={13} className="shrink-0" />
-                  <select onChange={(e) => { logic.loadFromHistory(e.target.value); e.target.value = ""; }} className="bg-purple-50 dark:bg-purple-900/30 border dark:border-purple-800/50 rounded p-1 max-w-[115px] sm:max-w-[150px] outline-none">
+                <div className="flex items-center gap-1 text-[11px] sm:text-xs text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50 rounded-md px-1.5 py-1 min-w-0 max-w-[105px] sm:max-w-[160px]">
+                  <History size={12} className="shrink-0" />
+                  <select onChange={(e) => { logic.loadFromHistory(e.target.value); e.target.value = ""; }} className="bg-transparent font-bold outline-none min-w-0 w-full truncate cursor-pointer">
                     <option value="">履歴コピー</option>
                     {logic.hostHistory.map((h, i) => <option key={i} value={i}>{h.title}</option>)}
                   </select>
@@ -132,9 +164,9 @@ export default function CreateEventTab({ logic }: Props) {
                 <button
                   type="button"
                   onClick={logic.clearAllDayBlocks}
-                  className="flex items-center gap-1 px-2 py-1 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/50 rounded-md transition whitespace-nowrap"
+                  className="flex items-center gap-1 px-2 py-1 text-[11px] sm:text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/50 rounded-md transition whitespace-nowrap shrink-0"
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={12} />
                   <span>全クリア</span>
                 </button>
               )}
@@ -184,20 +216,20 @@ export default function CreateEventTab({ logic }: Props) {
           <div className="space-y-4">
             {logic.dayBlocks.map((block) => (
               <div key={block.id} className="border dark:border-gray-700 rounded-xl overflow-hidden shadow-sm bg-white dark:bg-gray-800 transition-all hover:border-blue-300 dark:hover:border-blue-700">
-                <div className="bg-blue-50 dark:bg-blue-900/20 px-4 py-3 border-b dark:border-gray-700 flex justify-between items-center transition-colors">
-                  <div className="flex items-center gap-2 flex-1">
-                    <button onClick={() => logic.toggleDayExpanded(block.id)} className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800 rounded text-blue-600 dark:text-blue-400">
+                <div className="bg-blue-50 dark:bg-blue-900/20 px-3 sm:px-4 py-2.5 border-b dark:border-gray-700 flex justify-between items-center gap-2 transition-colors">
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+                    <button onClick={() => logic.toggleDayExpanded(block.id)} className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800 rounded text-blue-600 dark:text-blue-400 shrink-0">
                       {block.isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                     </button>
-                    <input type="date" value={block.date} onChange={e => logic.updateDayBlockDate(block.id, e.target.value)} className="font-bold text-blue-800 dark:text-blue-300 bg-transparent border-none outline-none focus:ring-0 cursor-pointer w-32" />
-                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400 hidden sm:inline">({format(new Date(block.date || new Date()), 'E', { locale: ja })})</span>
+                    <input type="date" value={block.date} onChange={e => logic.updateDayBlockDate(block.id, e.target.value)} className="w-auto min-w-0 text-sm sm:text-base font-bold text-blue-800 dark:text-blue-300 bg-transparent border-none outline-none focus:ring-0 cursor-pointer shrink-0" />
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400 hidden sm:inline shrink-0">({format(new Date(block.date ? `${block.date}T00:00:00` : new Date()), 'E', { locale: ja })})</span>
                     
-                    <label className="ml-2 flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white/50 dark:bg-gray-800 px-2 py-1 rounded border border-blue-200 dark:border-blue-800/50">
+                    <label className="ml-1 sm:ml-2 flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 cursor-pointer bg-white/50 dark:bg-gray-800 px-2 py-1 rounded border border-blue-200 dark:border-blue-800/50 whitespace-nowrap shrink-0">
                       <input type="checkbox" checked={block.isAllDay} onChange={e => logic.toggleDayAllDay(block.id, e.target.checked)} className="w-3 h-3 text-blue-600" />
                       終日
                     </label>
                   </div>
-                  <button onClick={() => logic.removeDayBlock(block.id)} className="text-red-400 hover:text-red-600 transition p-1"><Trash2 size={18} /></button>
+                  <button onClick={() => logic.removeDayBlock(block.id)} className="text-red-400 hover:text-red-600 transition p-1 shrink-0"><Trash2 size={18} /></button>
                 </div>
                 
                 {block.isExpanded && (
@@ -213,13 +245,13 @@ export default function CreateEventTab({ logic }: Props) {
                           <p className="text-xs text-gray-400 text-center py-2">時間が設定されていません</p>
                         ) : (
                           block.times.map((time) => (
-                            <div key={time.id} className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 p-2 rounded-lg border dark:border-gray-700 group">
-                              <div className="flex items-center gap-2 flex-1 pl-2">
-                                <input type="time" value={time.start} onChange={e => logic.updateTimeSlot(block.id, time.id, 'start', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500" />
-                                <span className="text-gray-400 text-xs">〜</span>
-                                <input type="time" value={time.end} onChange={e => logic.updateTimeSlot(block.id, time.id, 'end', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500" />
+                            <div key={time.id} className="flex items-center gap-2 sm:gap-3 bg-gray-50 dark:bg-gray-900 p-2 rounded-lg border dark:border-gray-700 group">
+                              <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0 pl-1 sm:pl-2">
+                                <input type="time" value={time.start} onChange={e => logic.updateTimeSlot(block.id, time.id, 'start', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 min-w-0 outline-none focus:ring-1 focus:ring-blue-500" />
+                                <span className="text-gray-400 text-xs shrink-0">〜</span>
+                                <input type="time" value={time.end} onChange={e => logic.updateTimeSlot(block.id, time.id, 'end', e.target.value)} className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 min-w-0 outline-none focus:ring-1 focus:ring-blue-500" />
                               </div>
-                              <button onClick={() => logic.removeTimeSlot(block.id, time.id)} className="text-gray-300 hover:text-red-500 p-1"><X size={16}/></button>
+                              <button onClick={() => logic.removeTimeSlot(block.id, time.id)} className="text-gray-300 hover:text-red-500 p-1 shrink-0"><X size={16}/></button>
                             </div>
                           ))
                         )}

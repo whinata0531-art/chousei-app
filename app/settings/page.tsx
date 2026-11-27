@@ -388,7 +388,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-xl mx-auto p-4 mt-4 space-y-6 pb-20">
+    <div className="max-w-xl mx-auto px-4 pb-20 space-y-5 [overflow-anchor:none]">
       {/* トースト通知 */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md pointer-events-none animate-fade-in">
@@ -406,58 +406,64 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ヘッダー */}
-      <div className="flex items-center justify-between">
+      {/* 上部追従ナビゲーションバー */}
+      <div className="sticky top-0 z-40 h-14 -mx-4 px-4 bg-white/95 dark:bg-[#0a0a0a]/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800/80 flex items-center justify-between">
         <button
           type="button"
           onClick={() => {
             const returnPath = localStorage.getItem('returnPath') || '/';
             router.push(returnPath);
           }}
-          className="inline-flex items-center gap-1.5 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3.5 py-2 rounded-lg font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm"
+          className="inline-flex items-center gap-1.5 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3.5 py-2 rounded-lg font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm whitespace-nowrap"
         >
           <ArrowLeft size={16} /> 戻る
         </button>
-        <h1 className="text-xl font-extrabold text-gray-800 dark:text-gray-100 tracking-tight">⚙️ 設定</h1>
+        <h1 className="text-lg sm:text-xl font-extrabold text-gray-800 dark:text-gray-100 tracking-tight whitespace-nowrap">
+          ⚙️ 設定
+        </h1>
         <div className="w-16" />
       </div>
 
       {/* カード1：固定シフト */}
-      <section className="bg-white dark:bg-gray-900 rounded-xl shadow-md border-t-4 border-t-purple-500 px-4 sm:px-5 pb-6 pt-5 space-y-4">
-        {/* ヘッダー */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b dark:border-gray-800 pb-3">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <CalendarDays className="text-purple-600 dark:text-purple-400 shrink-0" size={20} />
-            <h2 className="text-base sm:text-lg font-extrabold text-gray-800 dark:text-gray-100 whitespace-nowrap">
-              固定シフト
-            </h2>
-            <span className="text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
-              {totalRoutineSlots}枠
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-            <span
-              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors whitespace-nowrap ${
-                saveBadge === 'saved'
-                  ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
-              }`}
-            >
-              {saveBadge === 'saved' ? <Check size={12} /> : <CloudCheck size={12} />}
-              {saveBadge === 'saved' ? '保存しました' : '自動保存'}
-            </span>
-            {totalRoutineSlots > 0 && (
-              <button
-                type="button"
-                onClick={clearAllRoutine}
-                className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/50 rounded-md transition whitespace-nowrap"
+      <section className="bg-white dark:bg-gray-900 rounded-xl shadow-md px-4 sm:px-5 pb-6 relative">
+        {/* カード最上部の追従ヘッダー（紫アクセントライン＋タイトル＋自動保存＋全クリア） */}
+        <div className="sticky top-14 z-30 -mx-4 sm:-mx-5 bg-white dark:bg-[#0a0a0a]">
+          <div className="bg-white dark:bg-gray-900 border-t-4 border-t-purple-500 rounded-t-xl px-4 sm:px-5 pt-3.5 pb-3 border-b border-gray-100 dark:border-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <CalendarDays className="text-purple-600 dark:text-purple-400 shrink-0" size={19} />
+              <h2 className="text-sm sm:text-lg font-extrabold text-gray-800 dark:text-gray-100 whitespace-nowrap">
+                固定シフト
+              </h2>
+              <span className="text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800/50 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
+                {totalRoutineSlots}枠
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors whitespace-nowrap ${
+                  saveBadge === 'saved'
+                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+                }`}
               >
-                <Trash2 size={12} />
-                <span>全クリア</span>
-              </button>
-            )}
+                {saveBadge === 'saved' ? <Check size={12} /> : <CloudCheck size={12} />}
+                {saveBadge === 'saved' ? '保存しました' : '自動保存'}
+              </span>
+              {totalRoutineSlots > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAllRoutine}
+                  className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-red-600 dark:text-red-400 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 border border-red-200 dark:border-red-800/50 rounded-md transition whitespace-nowrap"
+                >
+                  <Trash2 size={12} />
+                  <span>全クリア</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
+
+        <div className="space-y-4 pt-4">
 
         {/* 2択モード切り替えセグメントバー & 1行ガイド */}
         <div className="space-y-2">
@@ -790,6 +796,7 @@ export default function SettingsPage() {
               </div>
             );
           })}
+        </div>
         </div>
       </section>
 

@@ -43,7 +43,7 @@ export default function InAppBrowserWarning() {
   if (!isInApp) return null; // 普通のブラウザなら何も出さない！
 
   return (
-    <div className="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 p-3 shadow-sm sticky top-0 z-50">
+    <div className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-3 shadow-sm sticky top-0 z-50">
       <div className="max-w-xl mx-auto flex items-start gap-3 text-slate-700 dark:text-slate-300">
         <Info size={20} className="shrink-0 mt-0.5 text-blue-500" />
         <div className="text-xs sm:text-sm">

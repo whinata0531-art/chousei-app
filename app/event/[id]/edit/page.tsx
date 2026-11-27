@@ -442,9 +442,9 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       </div>
 
       {/* メイン編集カード（CreateEventTabとデザイン統一） */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md px-6 pb-6 relative">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md px-4 sm:px-6 pb-6 relative">
         {/* 上部の青いアクセントバー（Sticky固定） */}
-        <div className="sticky top-0 z-30 -mx-6 bg-white dark:bg-[#0a0a0a]">
+        <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 bg-white dark:bg-[#0a0a0a]">
           <div className="h-3 bg-white dark:bg-gray-900 border-t-4 border-t-blue-500 dark:border-t-blue-500 rounded-t-xl" />
         </div>
 
@@ -491,51 +491,63 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
             </button>
 
             {isBulkOpen && (
-              <div className="p-4 space-y-4 border-t border-blue-200/50 dark:border-blue-800/30">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={bulkStartDate}
-                    onChange={e => setBulkStartDate(e.target.value)}
-                    className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-gray-500">〜</span>
-                  <input
-                    type="date"
-                    value={bulkEndDate}
-                    onChange={e => setBulkEndDate(e.target.value)}
-                    className="p-2 border dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="flex gap-2 flex-wrap items-center">
-                  {DOW_LABELS.map(dow => (
-                    <button
-                      key={dow.val}
-                      type="button"
-                      onClick={() => toggleDow(dow.val)}
-                      className={`w-10 h-10 rounded-full font-bold text-sm border transition-colors ${
-                        selectedDows.includes(dow.val)
-                          ? 'bg-blue-500 text-white border-blue-500'
-                          : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      {dow.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={toggleEveryday}
-                    className={`ml-2 px-3 py-2 rounded-full font-bold text-sm border transition-colors ${
-                      selectedDows.length === 7
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700 dark:border-gray-700'
-                    }`}
-                  >
-                    毎日
-                  </button>
+              <div className="p-3.5 sm:p-4 space-y-3.5 border-t border-blue-200/50 dark:border-blue-800/30">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0 bg-white dark:bg-gray-800 px-2.5 py-1.5 rounded-lg border border-blue-200/80 dark:border-gray-600">
+                    <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0 sm:hidden">開始</span>
+                    <input
+                      type="date"
+                      value={bulkStartDate}
+                      onChange={e => setBulkStartDate(e.target.value)}
+                      className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none"
+                    />
+                  </div>
+                  <span className="text-gray-400 text-xs text-center hidden sm:inline shrink-0">〜</span>
+                  <div className="flex items-center gap-2 flex-1 min-w-0 bg-white dark:bg-gray-800 px-2.5 py-1.5 rounded-lg border border-blue-200/80 dark:border-gray-600">
+                    <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 shrink-0 sm:hidden">終了</span>
+                    <input
+                      type="date"
+                      value={bulkEndDate}
+                      onChange={e => setBulkEndDate(e.target.value)}
+                      className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 mb-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-blue-800 dark:text-blue-300">対象の曜日</span>
+                    <button
+                      type="button"
+                      onClick={toggleEveryday}
+                      className={`px-3 py-1 rounded-full font-bold text-xs border transition-colors whitespace-nowrap ${
+                        selectedDows.length === 7
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-gray-700 hover:bg-blue-100/60'
+                      }`}
+                    >
+                      毎日を選択
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {DOW_LABELS.map(dow => (
+                      <button
+                        key={dow.val}
+                        type="button"
+                        onClick={() => toggleDow(dow.val)}
+                        className={`py-2 rounded-lg font-bold text-xs sm:text-sm border transition-colors ${
+                          selectedDows.includes(dow.val)
+                            ? 'bg-blue-500 text-white border-blue-500 shadow-xs'
+                            : 'bg-white dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {dow.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     id="editBulkAllDay"
@@ -549,24 +561,26 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
                 </div>
 
                 {!bulkIsAllDay && (
-                  <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700">
-                    <input
-                      type="time"
-                      value={bulkStart}
-                      onChange={e => setBulkStart(e.target.value)}
-                      className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none"
-                    />
-                    <span className="text-gray-500">〜</span>
-                    <input
-                      type="time"
-                      value={bulkEnd}
-                      onChange={e => setBulkEnd(e.target.value)}
-                      className="p-1 border-b dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 text-sm flex-1 outline-none"
-                    />
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <div className="flex items-center justify-between gap-2 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-blue-200/80 dark:border-gray-700 flex-1 min-w-0">
+                      <input
+                        type="time"
+                        value={bulkStart}
+                        onChange={e => setBulkStart(e.target.value)}
+                        className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none text-center"
+                      />
+                      <span className="text-gray-400 text-xs shrink-0">〜</span>
+                      <input
+                        type="time"
+                        value={bulkEnd}
+                        onChange={e => setBulkEnd(e.target.value)}
+                        className="bg-transparent dark:text-gray-200 text-sm flex-1 min-w-0 outline-none text-center"
+                      />
+                    </div>
                     <select
                       value={bulkInterval}
                       onChange={e => setBulkInterval(e.target.value)}
-                      className="p-1 border-l dark:border-gray-600 pl-2 text-sm flex-1 text-gray-600 dark:text-gray-300 dark:bg-gray-800 outline-none"
+                      className="px-3 py-2 bg-white dark:bg-gray-800 border border-blue-200/80 dark:border-gray-700 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-200 sm:w-32 outline-none"
                     >
                       <option value="60">60分枠</option>
                       <option value="90">90分枠</option>
@@ -578,7 +592,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
                 <button
                   type="button"
                   onClick={generateBulkSlots}
-                  className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition mt-2"
+                  className="w-full py-3 bg-blue-600 text-white font-bold rounded-lg shadow-sm hover:bg-blue-700 transition"
                 >
                   条件に合う枠を一気に追加する
                 </button>
@@ -588,7 +602,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
 
           {/* Sticky見出し＋全クリアボタン */}
           <div>
-            <div className="sticky top-3 z-20 -mx-6 px-6 pt-1 pb-2.5 mb-4 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex justify-between items-center gap-2">
+            <div className="sticky top-3 z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 pt-1 pb-2.5 mb-4 bg-white dark:bg-gray-900 border-b border-b-gray-100 dark:border-b-gray-800 shadow-[0_2px_4px_-2px_rgba(0,0,0,0.06)] flex justify-between items-center gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <h2 className="font-bold text-base sm:text-lg dark:text-gray-100 whitespace-nowrap">日程の編集</h2>
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full whitespace-nowrap">
@@ -685,7 +699,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
                   key={block.id}
                   className="border dark:border-gray-700 rounded-xl overflow-hidden shadow-sm bg-white dark:bg-gray-800 transition-all hover:border-blue-300 dark:hover:border-blue-700"
                 >
-                  <div className="bg-blue-50 dark:bg-blue-900/20 px-3 sm:px-4 py-3 border-b dark:border-gray-700 flex justify-between items-center gap-2 transition-colors">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 px-3 sm:px-4 py-2.5 border-b dark:border-gray-700 flex justify-between items-center gap-2 transition-colors">
                     <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
                       <button
                         type="button"
@@ -698,7 +712,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
                         type="date"
                         value={block.date}
                         onChange={e => updateDayBlockDate(block.id, e.target.value)}
-                        className="font-bold text-sm sm:text-base text-blue-800 dark:text-blue-300 bg-transparent border-none outline-none focus:ring-0 cursor-pointer w-[7.5rem] sm:w-32 shrink-0"
+                        className="w-auto min-w-0 font-bold text-sm sm:text-base text-blue-800 dark:text-blue-300 bg-transparent border-none outline-none focus:ring-0 cursor-pointer shrink-0"
                       />
                       <span className="text-sm font-bold text-blue-600 dark:text-blue-400 hidden sm:inline shrink-0">
                         ({format(new Date(block.date ? `${block.date}T00:00:00` : new Date()), 'E', { locale: ja })})
@@ -740,27 +754,27 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
                             block.times.map(time => (
                               <div
                                 key={time.id}
-                                className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 p-2 rounded-lg border dark:border-gray-700 group"
+                                className="flex items-center gap-2 sm:gap-3 bg-gray-50 dark:bg-gray-900 p-2 rounded-lg border dark:border-gray-700 group"
                               >
-                                <div className="flex items-center gap-2 flex-1 pl-2">
+                                <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0 pl-1 sm:pl-2">
                                   <input
                                     type="time"
                                     value={time.start}
                                     onChange={e => updateTimeSlot(block.id, time.id, 'start', e.target.value)}
-                                    className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 min-w-0 outline-none focus:ring-1 focus:ring-blue-500"
                                   />
-                                  <span className="text-gray-400 text-xs">〜</span>
+                                  <span className="text-gray-400 text-xs shrink-0">〜</span>
                                   <input
                                     type="time"
                                     value={time.end}
                                     onChange={e => updateTimeSlot(block.id, time.id, 'end', e.target.value)}
-                                    className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="p-1 border dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded text-sm flex-1 min-w-0 outline-none focus:ring-1 focus:ring-blue-500"
                                   />
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => removeTimeSlot(block.id, time.id)}
-                                  className="text-gray-300 hover:text-red-500 p-1"
+                                  className="text-gray-300 hover:text-red-500 p-1 shrink-0"
                                 >
                                   <X size={16} />
                                 </button>
