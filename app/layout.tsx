@@ -19,6 +19,9 @@ export const metadata: Metadata = {
   title: "最強調整",
   description: "最強の日程調整アプリ",
   manifest: '/manifest.json', // 💡 この1行を足すだけ！
+  verification: {
+    google: 'cNO-ZN6RQNJUeYvsDhlZPDeK5IiZq88xxwd9g7D-dkM',
+  },
 };
 
 export default function RootLayout({
